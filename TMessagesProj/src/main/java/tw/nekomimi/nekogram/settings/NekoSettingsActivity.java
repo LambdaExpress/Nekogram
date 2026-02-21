@@ -32,6 +32,7 @@ import org.telegram.ui.Cells.SettingsSearchCell;
 import org.telegram.ui.Components.BackupImageView;
 import org.telegram.ui.Components.CubicBezierInterpolator;
 import org.telegram.ui.Components.FragmentFloatingButton;
+import org.telegram.ui.Components.ItemOptions;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.UItem;
 import org.telegram.ui.Components.UniversalAdapter;
@@ -55,7 +56,7 @@ public class NekoSettingsActivity extends BaseNekoSettingsActivity implements Fa
     private final BoolAnimator animatorSearchPageVisible = new BoolAnimator(ANIMATOR_ID_SEARCH_PAGE_VISIBLE,
             this, CubicBezierInterpolator.EASE_OUT_QUINT, 350);
 
-    private final List<ConfigHelper.News> news = ConfigHelper.getNews();
+    private final List<ConfigHelper.News> newsList = new ArrayList<>();
 
     private final int generalRow = rowId++;
     private final int appearanceRow = rowId++;
@@ -186,10 +187,12 @@ public class NekoSettingsActivity extends BaseNekoSettingsActivity implements Fa
         items.add(UItem.asButtonSubtext(donateRow, R.drawable.msg_input_like, LocaleController.getString(R.string.Donate), LocaleController.getString(R.string.DonateAbout)).slug("donate"));
         items.add(UItem.asShadow(null));
 
-        if (!news.isEmpty()) {
+        newsList.clear();
+        newsList.addAll(ConfigHelper.getNewsForSettings());
+        if (!newsList.isEmpty()) {
             var newsId = 0;
-            for (var newsItem : news) {
-                items.add(TextDetailSettingsCellFactory.of(sponsorRow + newsId++, newsItem.title, newsItem.summary));
+            for (var news : newsList) {
+                items.add(TextDetailSettingsCellFactory.of(sponsorRow + newsId++, news.title, news.summary));
             }
             items.add(UItem.asShadow(null));
         }
@@ -227,9 +230,29 @@ public class NekoSettingsActivity extends BaseNekoSettingsActivity implements Fa
         } else if (id == sourceCodeRow) {
             Browser.openUrl(getParentActivity(), "https://github.com/Nekogram/Nekogram");
         } else if (id >= sponsorRow) {
-            var newsItem = news.get(id - sponsorRow);
-            Browser.openUrl(getParentActivity(), newsItem.url);
+            var news = newsList.get(id - sponsorRow);
+            Browser.openUrl(getParentActivity(), news.url);
         }
+    }
+
+    @Override
+    protected boolean onItemLongClick(UItem item, View view, int position, float x, float y) {
+        var id = item.id;
+        if (id >= sponsorRow) {
+            var news = newsList.get(id - sponsorRow);
+            if (news.id != null) {
+                ItemOptions.makeOptions(this, view)
+                        .setScrimViewBackground(listView.getClipBackground(view))
+                        .add(R.drawable.msg_cancel, LocaleController.getString(R.string.Hide), () -> {
+                            ConfigHelper.removeNews(news.id);
+                            listView.adapter.update(true);
+                        })
+                        .setMinWidth(190)
+                        .show();
+                return true;
+            }
+        }
+        return super.onItemLongClick(item, view, position, x, y);
     }
 
     @Override
