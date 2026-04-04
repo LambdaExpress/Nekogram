@@ -125,7 +125,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import tw.nekomimi.nekogram.NekoConfig;
+import com.fylnx.lelegram.LeleConfig;
 
 @SuppressLint("ViewConstructor")
 public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayout implements NotificationCenter.NotificationCenterDelegate {
@@ -729,7 +729,7 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
     public ChatAttachAlertPhotoLayout(ChatAttachAlert alert, Context context, boolean forceDarkTheme, boolean needCamera, Theme.ResourcesProvider resourcesProvider) {
         super(alert, context, resourcesProvider);
         this.forceDarkTheme = forceDarkTheme;
-        this.needCamera = needCamera;
+        this.needCamera = needCamera && !LeleConfig.hideAttachCameraBlock;
         NotificationCenter.getGlobalInstance().addObserver(this, NotificationCenter.albumsDidLoad);
         NotificationCenter.getGlobalInstance().addObserver(this, NotificationCenter.cameraInitied);
         FrameLayout container = alert.getContainer();
@@ -816,7 +816,7 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
         gridView.getFastScroll().setAlpha(0f);
         gridView.getFastScroll().usePadding = false;
         gridView.getFastScroll().topOffset = ActionBar.getCurrentActionBarHeight(); // + AndroidUtilities.statusBarHeight;
-        gridView.setAdapter(adapter = new PhotoAttachAdapter(context, needCamera));
+        gridView.setAdapter(adapter = new PhotoAttachAdapter(context, this.needCamera));
         gridView.addItemDecoration(cameraViewItemDecoration = new CameraViewItemDecoration(gridView));
         adapter.createCache();
         gridView.setClipToPadding(false);
@@ -940,11 +940,11 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
                 return;
             }
 
-            if (position != 0 || !needCamera || selectedAlbumEntry != galleryAlbumEntry) {
+            if (position != 0 || !this.needCamera || selectedAlbumEntry != galleryAlbumEntry) {
                 if (adapter.hasCameraSpaceRow && position > itemsPerRow) {
                     position--;
                 }
-                if (selectedAlbumEntry == galleryAlbumEntry && needCamera) {
+                if (selectedAlbumEntry == galleryAlbumEntry && this.needCamera) {
                     position--;
                 }
                 if (showAvatarConstructor) {
@@ -2532,7 +2532,7 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
         gridView.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
         gridView.invalidate();
 
-        if ((NekoConfig.disableInstantCamera || !LiteMode.isEnabled(LiteMode.FLAGS_CHAT)) && cameraView != null && cameraView.isInited()) {
+        if ((LeleConfig.disableInstantCamera || !LiteMode.isEnabled(LiteMode.FLAGS_CHAT)) && cameraView != null && cameraView.isInited()) {
             cameraView.showTexture(true, animated);
         }
     }
@@ -2558,7 +2558,7 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
             return;
         }
         if (cameraView == null) {
-            final boolean lazy = NekoConfig.disableInstantCamera || !LiteMode.isEnabled(LiteMode.FLAGS_CHAT);
+            final boolean lazy = LeleConfig.disableInstantCamera || !LiteMode.isEnabled(LiteMode.FLAGS_CHAT);
             cameraView = new CameraViewInternal(getContext(), isCameraFrontfaceBeforeEnteringEditMode != null ? isCameraFrontfaceBeforeEnteringEditMode : parentAlert.openWithFrontFaceCamera, lazy);
             //if (lazy) {
             //    cameraView.setThumbDrawable(cameraViewItemDecoration.placeholderDrawable);
@@ -2914,7 +2914,7 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
         }
         gridView.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_AUTO);
 
-        if ((NekoConfig.disableInstantCamera || !LiteMode.isEnabled(LiteMode.FLAGS_CHAT)) && cameraView != null) {
+        if ((LeleConfig.disableInstantCamera || !LiteMode.isEnabled(LiteMode.FLAGS_CHAT)) && cameraView != null) {
             cameraView.showTexture(false, animated);
         }
     }
@@ -4787,7 +4787,7 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
 
         public void updateBitmap() {
             Bitmap bitmap = null;
-            if (!NekoConfig.disableInstantCamera) {
+            if (!LeleConfig.disableInstantCamera) {
                 try {
                     File file = new File(ApplicationLoader.getFilesDirFixed(), "cthumb.jpg");
                     bitmap = BitmapFactory.decodeFile(file.getAbsolutePath());

@@ -88,13 +88,19 @@ public final class BulletinFactory {
         return BulletinFactory.of(baseFragment);
     }
 
+    private static CharSequence formatErrorMessage(String errorCode) {
+        if (TextUtils.isEmpty(errorCode)) {
+            return LocaleController.getString(R.string.UnknownError);
+        }
+        if (errorCode.startsWith("MESSAGE_ID_INVALID")) {
+            return LocaleController.getString(R.string.SourceMessageDeleted);
+        }
+        return LocaleController.formatString(R.string.UnknownErrorCode, errorCode);
+    }
+
     public Bulletin makeForError(TLRPC.TL_error error) {
         if (!LaunchActivity.isActive) return new Bulletin.EmptyBulletin();
-        if (error == null) {
-            return createErrorBulletin(LocaleController.formatString(R.string.UnknownError));
-        } else {
-            return createErrorBulletin(LocaleController.formatString(R.string.UnknownErrorCode, error.text));
-        }
+        return createErrorBulletin(formatErrorMessage(error != null ? error.text : null));
     }
 
     public void showForError(TLRPC.TL_error error) {
@@ -102,35 +108,23 @@ public final class BulletinFactory {
     }
     public void showForError(TLRPC.TL_error error, boolean top) {
         if (!LaunchActivity.isActive) return;
-        if (error == null) {
-            Bulletin b = createErrorBulletin(LocaleController.formatString(R.string.UnknownError));
-            b.hideAfterBottomSheet = false;
-            b.show(top);
-        } else {
-            Bulletin b = createErrorBulletin(LocaleController.formatString(R.string.UnknownErrorCode, error.text));
-            b.hideAfterBottomSheet = false;
-            b.show(top);
-        }
+        Bulletin b = createErrorBulletin(formatErrorMessage(error != null ? error.text : null));
+        b.hideAfterBottomSheet = false;
+        b.show(top);
     }
     public void showForError(String errorCode) {
         showForError(errorCode, false);
     }
     public void showForError(String errorCode, boolean top) {
         if (!LaunchActivity.isActive) return;
-        if (TextUtils.isEmpty(errorCode)) {
-            Bulletin b = createErrorBulletin(LocaleController.formatString(R.string.UnknownError));
-            b.hideAfterBottomSheet = false;
-            b.show(top);
-        } else {
-            Bulletin b = createErrorBulletin(LocaleController.formatString(R.string.UnknownErrorCode, errorCode));
-            b.hideAfterBottomSheet = false;
-            b.show(top);
-        }
+        Bulletin b = createErrorBulletin(formatErrorMessage(errorCode));
+        b.hideAfterBottomSheet = false;
+        b.show(top);
     }
 
     public static void showError(TLRPC.TL_error error) {
         if (!LaunchActivity.isActive) return;
-        global().createErrorBulletin(LocaleController.formatString(R.string.UnknownErrorCode, error.text)).show();
+        global().createErrorBulletin(formatErrorMessage(error != null ? error.text : null)).show();
     }
 
     public enum FileType {

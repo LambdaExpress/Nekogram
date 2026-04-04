@@ -328,13 +328,13 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 
-import tw.nekomimi.nekogram.NekoConfig;
-import tw.nekomimi.nekogram.forward.ForwardItem;
-import tw.nekomimi.nekogram.helpers.LensHelper;
-import tw.nekomimi.nekogram.helpers.MessageHelper;
-import tw.nekomimi.nekogram.helpers.QrHelper;
-import tw.nekomimi.nekogram.streaming.MediaStreamingProvider;
-import tw.nekomimi.nekogram.translator.Translator;
+import com.fylnx.lelegram.LeleConfig;
+import com.fylnx.lelegram.forward.ForwardItem;
+import com.fylnx.lelegram.helpers.LensHelper;
+import com.fylnx.lelegram.helpers.MessageHelper;
+import com.fylnx.lelegram.helpers.QrHelper;
+import com.fylnx.lelegram.streaming.MediaStreamingProvider;
+import com.fylnx.lelegram.translator.Translator;
 import me.vkryl.core.reference.ReferenceList;
 
 @SuppressLint("WrongConstant")
@@ -5272,7 +5272,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                         msgs.add(currentMessageObject);
                     }
 
-                    if ((isChannel || NekoConfig.quickForward) && msgs.size() <= 1) {
+                    if ((isChannel || LeleConfig.quickForward) && msgs.size() <= 1) {
                         showShareAlert(msgs, id == gallery_menu_send_noquote, id == gallery_menu_send_nocaption);
                     } else if (msgs.size() > 1) {
                         boolean photos = true;
@@ -18685,7 +18685,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
         if (photoPaintView != null) {
             photoPaintView.onResume();
         }
-        if (pausedOnPause && NekoConfig.autoPauseVideo && videoPlayer != null && !videoPlayer.isPlaying()) {
+        if (pausedOnPause && LeleConfig.autoPauseVideo && videoPlayer != null && !videoPlayer.isPlaying()) {
             pausedOnPause = false;
             videoPlayer.play();
         }
@@ -18704,7 +18704,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
         if (videoPlayer != null && playerLooping) {
             videoPlayer.setLooping(allowLoopingOnPause());
         }
-        if (NekoConfig.autoPauseVideo && videoPlayer != null && videoPlayer.isPlaying()) {
+        if (LeleConfig.autoPauseVideo && videoPlayer != null && videoPlayer.isPlaying()) {
             pausedOnPause = true;
             videoPlayer.pause();
         }

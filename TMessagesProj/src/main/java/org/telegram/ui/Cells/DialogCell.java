@@ -142,9 +142,9 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Stack;
 
-import tw.nekomimi.nekogram.NekoConfig;
-import tw.nekomimi.nekogram.accessibility.AccConfig;
-import tw.nekomimi.nekogram.helpers.MessageFilterHelper;
+import com.fylnx.lelegram.LeleConfig;
+import com.fylnx.lelegram.accessibility.AccConfig;
+import com.fylnx.lelegram.helpers.MessageFilterHelper;
 
 public class DialogCell extends BaseCell implements StoriesListPlaceProvider.AvatarOverlaysView {
 
@@ -5392,7 +5392,7 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
     }
 
     public void updateMessageThumbs() {
-        if (message == null || !NekoConfig.mediaPreview) {
+        if (message == null || !LeleConfig.mediaPreview) {
             return;
         }
         String restrictionReason = MessagesController.getInstance(message.currentAccount).getRestrictionReason(message.messageOwner.restriction_reason);

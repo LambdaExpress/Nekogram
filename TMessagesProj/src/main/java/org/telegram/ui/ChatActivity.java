@@ -302,20 +302,21 @@ import org.telegram.ui.bots.BotCommandsMenuView;
 import org.telegram.ui.bots.BotWebViewSheet;
 import org.telegram.ui.bots.WebViewRequestProps;
 
-import tw.nekomimi.nekogram.BackButtonMenuRecent;
-import tw.nekomimi.nekogram.forward.ForwardContext;
-import tw.nekomimi.nekogram.forward.ForwardDrawable;
-import tw.nekomimi.nekogram.forward.ForwardItem;
-import tw.nekomimi.nekogram.forward.ForwardPopupWrapper;
-import tw.nekomimi.nekogram.MessageDetailsActivity;
-import tw.nekomimi.nekogram.NekoConfig;
-import tw.nekomimi.nekogram.helpers.MessageHelper;
-import tw.nekomimi.nekogram.helpers.QrHelper;
-import tw.nekomimi.nekogram.helpers.EmojiHelper;
-import tw.nekomimi.nekogram.helpers.WebAppHelper;
-import tw.nekomimi.nekogram.streaming.MediaStreamingProvider;
-import tw.nekomimi.nekogram.translator.Translator;
-import tw.nekomimi.nekogram.translator.TranslatorSettingsPopupWrapper;
+import com.fylnx.lelegram.BackButtonMenuRecent;
+import com.fylnx.lelegram.forward.ForwardContext;
+import com.fylnx.lelegram.forward.ForwardDrawable;
+import com.fylnx.lelegram.forward.ForwardItem;
+import com.fylnx.lelegram.forward.ForwardPopupWrapper;
+import com.fylnx.lelegram.MessageEditHistoryActivity;
+import com.fylnx.lelegram.MessageDetailsActivity;
+import com.fylnx.lelegram.LeleConfig;
+import com.fylnx.lelegram.helpers.MessageHelper;
+import com.fylnx.lelegram.helpers.QrHelper;
+import com.fylnx.lelegram.helpers.EmojiHelper;
+import com.fylnx.lelegram.helpers.WebAppHelper;
+import com.fylnx.lelegram.streaming.MediaStreamingProvider;
+import com.fylnx.lelegram.translator.Translator;
+import com.fylnx.lelegram.translator.TranslatorSettingsPopupWrapper;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
@@ -1192,6 +1193,7 @@ public class ChatActivity extends BaseFragment implements
     public final static int OPTION_CLEAR_FILE = 92;
     public final static int OPTION_SAVE_MESSAGE = 93;
     public final static int OPTION_REPEAT = 94;
+    public final static int OPTION_EDIT_HISTORY = 95;
     public final static int OPTION_SEND_NOW = 100;
     public final static int OPTION_EDIT_SCHEDULE_TIME = 102;
     public final static int OPTION_SPEED_PROMO = 103;
@@ -1849,11 +1851,11 @@ public class ChatActivity extends BaseFragment implements
             } else {
                 return false;
             }
-            var doubleTapAction = message.isOut() ? NekoConfig.doubleTapOutAction : NekoConfig.doubleTapInAction;
-            if (doubleTapAction == NekoConfig.DOUBLE_TAP_ACTION_NONE) {
+            var doubleTapAction = message.isOut() ? LeleConfig.doubleTapOutAction : LeleConfig.doubleTapInAction;
+            if (doubleTapAction == LeleConfig.DOUBLE_TAP_ACTION_NONE) {
                 return false;
             }
-            if (doubleTapAction == NekoConfig.DOUBLE_TAP_ACTION_REACTION) {
+            if (doubleTapAction == LeleConfig.DOUBLE_TAP_ACTION_REACTION) {
                 if (getDialogId() == getUserConfig().getClientUserId() && !getUserConfig().isPremium()) {
                     return false;
                 }
@@ -1908,21 +1910,21 @@ public class ChatActivity extends BaseFragment implements
                     allowChatActions = false;
                 }
                 switch (doubleTapAction) {
-                    case NekoConfig.DOUBLE_TAP_ACTION_TRANSLATE:
-                        if (NekoConfig.transType != NekoConfig.TRANS_TYPE_EXTERNAL || !noforwards) {
+                    case LeleConfig.DOUBLE_TAP_ACTION_TRANSLATE:
+                        if (LeleConfig.transType != LeleConfig.TRANS_TYPE_EXTERNAL || !noforwards) {
                             MessageObject messageObject = getMessageHelper().getMessageForTranslate(message, messageGroup);
                             if (messageObject != null) {
                                 return true;
                             }
                         }
                         break;
-                    case NekoConfig.DOUBLE_TAP_ACTION_REPLY:
+                    case LeleConfig.DOUBLE_TAP_ACTION_REPLY:
                         return message.getId() > 0 && allowChatActions;
-                    case NekoConfig.DOUBLE_TAP_ACTION_SAVE:
+                    case LeleConfig.DOUBLE_TAP_ACTION_SAVE:
                         return !message.isSponsored() && chatMode != MODE_SCHEDULED && (!message.needDrawBluredPreview() || message.hasExtendedMediaPreview()) && !message.isLiveLocation() && message.type != MessageObject.TYPE_PHONE_CALL && !noforwards && message.type != MessageObject.TYPE_GIFT_PREMIUM && !UserObject.isUserSelf(currentUser);
-                    case NekoConfig.DOUBLE_TAP_ACTION_REPEAT:
+                    case LeleConfig.DOUBLE_TAP_ACTION_REPEAT:
                         return allowChatActions && (!(isThreadChat() && !isTopic) && !noforwards || getMessageHelper().getMessageForRepeat(message, messageGroup) != null) && !message.isSponsored() && chatMode != MODE_SCHEDULED && (!message.needDrawBluredPreview() || message.hasExtendedMediaPreview()) && !message.isLiveLocation() && message.type != MessageObject.TYPE_PHONE_CALL && message.type != MessageObject.TYPE_GIFT_PREMIUM && !UserObject.isUserSelf(currentUser);
-                    case NekoConfig.DOUBLE_TAP_ACTION_EDIT:
+                    case LeleConfig.DOUBLE_TAP_ACTION_EDIT:
                         return allowEdit;
                 }
             }
@@ -1945,11 +1947,11 @@ public class ChatActivity extends BaseFragment implements
             } else {
                 return;
             }
-            var doubleTapAction = message.isOut() ? NekoConfig.doubleTapOutAction : NekoConfig.doubleTapInAction;
-            if (doubleTapAction == NekoConfig.DOUBLE_TAP_ACTION_NONE) {
+            var doubleTapAction = message.isOut() ? LeleConfig.doubleTapOutAction : LeleConfig.doubleTapInAction;
+            if (doubleTapAction == LeleConfig.DOUBLE_TAP_ACTION_NONE) {
                 return;
             }
-            if (doubleTapAction == NekoConfig.DOUBLE_TAP_ACTION_REACTION) {
+            if (doubleTapAction == LeleConfig.DOUBLE_TAP_ACTION_REACTION) {
                 if (message.isSecretMedia() || !message.canSetReaction() || message.isExpiredStory() || message.type == MessageObject.TYPE_JOINED_CHANNEL) {
                     return;
                 }
@@ -1985,23 +1987,23 @@ public class ChatActivity extends BaseFragment implements
                 selectedObject = message;
                 selectedObjectGroup = getValidGroupedMessage(message);
                 switch (doubleTapAction) {
-                    case NekoConfig.DOUBLE_TAP_ACTION_TRANSLATE:
+                    case LeleConfig.DOUBLE_TAP_ACTION_TRANSLATE:
                         var messageObject = getMessageHelper().getMessageForTranslate(selectedObject, selectedObjectGroup);
                         if (messageObject == null) {
                             return;
                         }
                         translateOrResetMessage(messageObject, view, null);
                         break;
-                    case NekoConfig.DOUBLE_TAP_ACTION_REPLY:
+                    case LeleConfig.DOUBLE_TAP_ACTION_REPLY:
                         processSelectedOption(OPTION_REPLY);
                         break;
-                    case NekoConfig.DOUBLE_TAP_ACTION_SAVE:
+                    case LeleConfig.DOUBLE_TAP_ACTION_SAVE:
                         processSelectedOption(OPTION_SAVE_MESSAGE);
                         break;
-                    case NekoConfig.DOUBLE_TAP_ACTION_REPEAT:
+                    case LeleConfig.DOUBLE_TAP_ACTION_REPEAT:
                         processSelectedOption(OPTION_REPEAT);
                         break;
-                    case NekoConfig.DOUBLE_TAP_ACTION_EDIT:
+                    case LeleConfig.DOUBLE_TAP_ACTION_EDIT:
                         processSelectedOption(OPTION_EDIT);
                         break;
                 }
@@ -6699,7 +6701,7 @@ public class ChatActivity extends BaseFragment implements
                 if (!foundTopView) {
                     scrolled = super.scrollVerticallyBy(dy, recycler, state);
                 }
-                if (!NekoConfig.disableJumpToNextChannel && dy > 0 && scrolled == 0 && (ChatObject.isChannel(currentChat) && !currentChat.megagroup || isTopic && !UserObject.isBotForum(currentUser)) && chatMode != MODE_SAVED && chatMode != MODE_SCHEDULED && chatListView.getScrollState() == RecyclerView.SCROLL_STATE_DRAGGING && !chatListView.isFastScrollAnimationRunning() && !chatListView.isMultiselect() && !isReport()) {
+                if (!LeleConfig.disableJumpToNextChannel && dy > 0 && scrolled == 0 && (ChatObject.isChannel(currentChat) && !currentChat.megagroup || isTopic && !UserObject.isBotForum(currentUser)) && chatMode != MODE_SAVED && chatMode != MODE_SCHEDULED && chatListView.getScrollState() == RecyclerView.SCROLL_STATE_DRAGGING && !chatListView.isFastScrollAnimationRunning() && !chatListView.isMultiselect() && !isReport()) {
                     if (pullingDownOffset == 0 && pullingDownDrawable != null) {
                         if (nextChannels != null && !nextChannels.isEmpty()) {
                             pullingDownDrawable.updateDialog(nextChannels.get(0));
@@ -6835,7 +6837,7 @@ public class ChatActivity extends BaseFragment implements
                         wasManualScroll = true;
                         scrollingChatListView = true;
                     } else if (newState == RecyclerView.SCROLL_STATE_DRAGGING) {
-                        if (NekoConfig.hideKeyboardOnChatScroll) {
+                        if (LeleConfig.hideKeyboardOnChatScroll) {
                             if (isKeyboardVisible()) {
                                 AndroidUtilities.hideKeyboard(getParentActivity().getCurrentFocus());
                             } else if (chatActivityEnterView != null) {
@@ -9202,7 +9204,7 @@ public class ChatActivity extends BaseFragment implements
         if (cell == null || cell.timeLayout == null || cell.getMessageObject() == null ||
                 cell.getMessageObject().messageOwner == null ||
                 (chatMode != MODE_DEFAULT && chatMode != MODE_PINNED && chatMode != MODE_SAVED) ||
-                (NekoConfig.hideTimeOnSticker && cell.getMessageObject().isAnyKindOfSticker())
+                (LeleConfig.hideTimeOnSticker && cell.getMessageObject().isAnyKindOfSticker())
         ) {
             return;
         }
@@ -10301,7 +10303,7 @@ public class ChatActivity extends BaseFragment implements
             actionModeViews.add(actionMode.addItemWithWidth(copy, R.drawable.msg_copy, AndroidUtilities.dp(54), LocaleController.getString(R.string.Copy)));
             if (!isSavedMessages && getDialogId() != UserObject.VERIFY) {
                 actionModeViews.add(actionMode.addItemWithWidth(forward, R.drawable.msg_forward, AndroidUtilities.dp(54), LocaleController.getString(R.string.Forward)));
-                if (NekoConfig.showNoQuoteForward) actionModeViews.add(actionMode.addItemWithWidth(ForwardItem.ID_FORWARD_NOQUOTE, R.drawable.msg_forward, AndroidUtilities.dp(54), LocaleController.getString(R.string.NoQuoteForward)));
+                if (LeleConfig.showNoQuoteForward) actionModeViews.add(actionMode.addItemWithWidth(ForwardItem.ID_FORWARD_NOQUOTE, R.drawable.msg_forward, AndroidUtilities.dp(54), LocaleController.getString(R.string.NoQuoteForward)));
             }
             actionModeViews.add(actionMode.addItemWithWidth(share, R.drawable.msg_shareout, AndroidUtilities.dp(54), LocaleController.getString(R.string.ShareFile)));
             actionModeViews.add(actionMode.addItemWithWidth(delete, R.drawable.msg_delete, AndroidUtilities.dp(54), LocaleController.getString(R.string.Delete)));
@@ -12344,7 +12346,7 @@ public class ChatActivity extends BaseFragment implements
             }
             return;
         }
-        if (NekoConfig.quickForward) {
+        if (LeleConfig.quickForward) {
             openShareAlert(this, this, () -> {
                 for (int a = 1; a >= 0; a--) {
                     selectedMessagesCanCopyIds[a].clear();
@@ -21789,7 +21791,7 @@ public class ChatActivity extends BaseFragment implements
         } else if (id == NotificationCenter.didLoadSendAsPeers) {
             loadSendAsPeers(true);
         } else if (id == NotificationCenter.didLoadSponsoredMessages) {
-            addSponsoredMessages(true);
+            updateLocalChannelSponsoredMessages(true);
         } else if (id == NotificationCenter.closeChats) {
             if (args != null && args.length > 0) {
                 long did = (Long) args[0];
@@ -24524,8 +24526,62 @@ public class ChatActivity extends BaseFragment implements
     private boolean sponsoredMessagesAdded;
     private Pattern sponsoredUrlPattern;
     private MessageObject botSponsoredMessage;
+
+    private boolean shouldBlockLocalChannelSponsoredMessages() {
+        return LeleConfig.hideChannelAds && currentChat != null && ChatObject.isChannelAndNotMegaGroup(currentChat);
+    }
+
+    private boolean removeLocalChannelSponsoredMessages() {
+        if (messages.isEmpty()) {
+            return false;
+        }
+        boolean changed = false;
+        for (int i = messages.size() - 1; i >= 0; i--) {
+            MessageObject messageObject = messages.get(i);
+            if (!messageObject.isSponsored()) {
+                continue;
+            }
+            messages.remove(i);
+            messagesDict[0].remove(messageObject.getId());
+            if (notPushedSponsoredMessages != null) {
+                notPushedSponsoredMessages.remove(messageObject);
+            }
+            ArrayList<MessageObject> dayArray = messagesByDays.get(messageObject.dateKey);
+            if (dayArray != null) {
+                dayArray.remove(messageObject);
+                if (dayArray.isEmpty()) {
+                    messagesByDays.remove(messageObject.dateKey);
+                    messagesByDaysSorted.remove(messageObject.dateKeyInt);
+                    if (i >= 0 && i < messages.size() && messages.get(i).isDateObject) {
+                        messages.remove(i);
+                    }
+                }
+            }
+            changed = true;
+        }
+        return changed;
+    }
+
+    private void updateLocalChannelSponsoredMessages(boolean animated) {
+        if (shouldBlockLocalChannelSponsoredMessages()) {
+            sponsoredMessagesAdded = false;
+            sponsoredMessagesPostsBetween = 0;
+            if (notPushedSponsoredMessages != null) {
+                notPushedSponsoredMessages.clear();
+            }
+            if (removeLocalChannelSponsoredMessages() && chatAdapter != null) {
+                chatAdapter.updateRowsSafe();
+                chatAdapter.notifyDataSetChanged(animated);
+            }
+            return;
+        }
+        if (!sponsoredMessagesAdded) {
+            addSponsoredMessages(animated);
+        }
+    }
+
     private void addSponsoredMessages(boolean animated) {
-        if (sponsoredMessagesAdded || chatMode != 0 || !ChatObject.isChannel(currentChat) && !UserObject.isBot(currentUser) || !forwardEndReached[0] || getUserConfig().isPremium() && getMessagesController().isSponsoredDisabled() || isReport()) {
+        if (shouldBlockLocalChannelSponsoredMessages() || sponsoredMessagesAdded || chatMode != 0 || !ChatObject.isChannel(currentChat) && !UserObject.isBot(currentUser) || !forwardEndReached[0] || getUserConfig().isPremium() && getMessagesController().isSponsoredDisabled() || isReport()) {
             return;
         }
         MessagesController.SponsoredMessagesInfo res = getMessagesController().getSponsoredMessages(dialog_id);
@@ -29255,6 +29311,7 @@ public class ChatActivity extends BaseFragment implements
             contentView.onResume();
         }
         checkChecksHint();
+        updateLocalChannelSponsoredMessages(false);
 
         Bulletin.addDelegate(this, bulletinDelegate = new Bulletin.Delegate() {
             @Override
@@ -31191,7 +31248,7 @@ public class ChatActivity extends BaseFragment implements
                             }
                         }, waitForQr, onQrDetectionDone);
                     }
-                    if (option == OPTION_FORWARD || (option == OPTION_FORWARD_NOQUOTE && !NekoConfig.showNoQuoteForward) || option == OPTION_FORWARD_NOCAPTION) {
+                    if (option == OPTION_FORWARD || (option == OPTION_FORWARD_NOQUOTE && !LeleConfig.showNoQuoteForward) || option == OPTION_FORWARD_NOCAPTION) {
                         var forwardPopupWrapper = new ForwardPopupWrapper(this, selectedObject, selectedObjectGroup, popupLayout.getSwipeBack(), this::processSelectedOption, getResourceProvider());
                         int swipeBackIndex = popupLayout.addViewToSwipeBack(forwardPopupWrapper.windowLayout);
                         cell.setIcon(new ForwardDrawable(option, false));
@@ -32542,7 +32599,7 @@ public class ChatActivity extends BaseFragment implements
         var transcription = messageObject.isVoiceTranscriptionOpen();
         var messageText = transcription ? messageObject.messageOwner.voiceTranscription : messageObject.messageOwner.message;
         var entities = transcription ? null : messageObject.messageOwner.entities;
-        if (NekoConfig.transType != NekoConfig.TRANS_TYPE_NEKO || messageObject.isSponsored()) {
+        if (LeleConfig.transType != LeleConfig.TRANS_TYPE_LELE || messageObject.isSponsored()) {
             if (!messageObject.isPoll()) {
                 Translator.showTranslateDialog(getParentActivity(), messageText, entities, isPeerNoForwards() || messageObject.messageOwner.noforwards, this, link -> {
                     didPressMessageUrl(link, false, selectedObject, null);
@@ -32638,7 +32695,7 @@ public class ChatActivity extends BaseFragment implements
                 ForwardItem.setLastForwardOption(option);
                 forwardingMessage = selectedObject;
                 forwardingMessageGroup = selectedObjectGroup;
-                if (NekoConfig.quickForward) {
+                if (LeleConfig.quickForward) {
                     openShareAlert(this, this, () -> {
                         forwardingMessage = null;
                         forwardingMessageGroup = null;
@@ -33381,6 +33438,9 @@ public class ChatActivity extends BaseFragment implements
                 break;
             } case OPTION_DETAILS: {
                 presentFragment(new MessageDetailsActivity(selectedObject));
+                break;
+            } case OPTION_EDIT_HISTORY: {
+                presentFragment(new MessageEditHistoryActivity(selectedObject));
                 break;
             } case OPTION_PRPR: {
                 if (checkSlowMode(chatActivityEnterView.getSendButton())) {
@@ -38532,7 +38592,7 @@ public class ChatActivity extends BaseFragment implements
                 return false;
             } else if (messageObject.isVoice() || messageObject.isRoundVideo()) {
                 boolean result = MediaController.getInstance().playMessage(messageObject, muted);
-                if (!NekoConfig.disableVoiceMessageAutoPlay) MediaController.getInstance().setVoiceMessagesPlaylist(result ? createVoiceMessagesPlaylist(messageObject, false) : null, false);
+                if (!LeleConfig.disableVoiceMessageAutoPlay) MediaController.getInstance().setVoiceMessagesPlaylist(result ? createVoiceMessagesPlaylist(messageObject, false) : null, false);
                 return result;
             } else if (messageObject.isMusic()) {
                 return MediaController.getInstance().setPlaylist(chatAdapter.getMessages(), messageObject, mergeDialogId, !chatAdapter.isFiltered, null);
@@ -44462,6 +44522,15 @@ public class ChatActivity extends BaseFragment implements
         return -1;
     }
 
+    private boolean canShowEditHistory(MessageObject messageObject) {
+        return messageObject != null
+                && messageObject.messageOwner != null
+                && messageObject.messageOwner.edit_date != 0
+                && LeleConfig.showMessageEditHistory
+                && messageObject.messageOwner.editHistory != null
+                && !messageObject.messageOwner.editHistory.isEmpty();
+    }
+
     public void fillMessageMenu(
         MessageObject primaryMessage,
 
@@ -44644,7 +44713,12 @@ public class ChatActivity extends BaseFragment implements
                 options.add(OPTION_DELETE);
                 icons.add(deleteIconRes);
             }
-            if (!selectedObject.isSponsored() && chatMode != MODE_QUICK_REPLIES && chatMode != MODE_SCHEDULED && NekoConfig.showMessageDetails) {
+            if (!selectedObject.isSponsored() && chatMode != MODE_QUICK_REPLIES && chatMode != MODE_SCHEDULED && canShowEditHistory(selectedObject)) {
+                items.add(LocaleController.getString(R.string.ViewHistory));
+                options.add(OPTION_EDIT_HISTORY);
+                icons.add(R.drawable.msg_recent);
+            }
+            if (!selectedObject.isSponsored() && chatMode != MODE_QUICK_REPLIES && chatMode != MODE_SCHEDULED && LeleConfig.showMessageDetails) {
                 items.add(LocaleController.getString(R.string.MessageDetails));
                 options.add(OPTION_DETAILS);
                 icons.add(R.drawable.msg_info);
@@ -44741,7 +44815,7 @@ public class ChatActivity extends BaseFragment implements
                                     icons.add(R.drawable.msg_addbot);
                                 }
                             }
-                        } else if (NekoConfig.showOpenIn && selectedObject.isVideo() && !noforwardsOrPaidMedia && !selectedObject.hasRevealedExtendedMedia() && !selectedObject.needDrawBluredPreview()) {
+                        } else if (LeleConfig.showOpenIn && selectedObject.isVideo() && !noforwardsOrPaidMedia && !selectedObject.hasRevealedExtendedMedia() && !selectedObject.needDrawBluredPreview()) {
                             items.add(LocaleController.getString(R.string.OpenInExternalApp));
                             options.add(OPTION_OPEN_IN);
                             icons.add(R.drawable.msg_openin);
@@ -44762,7 +44836,7 @@ public class ChatActivity extends BaseFragment implements
                         icons.add(R.drawable.msg_gif);
                     }
                 } else if (type == 4) {
-                    if (NekoConfig.showDeleteDownloadedFile && !selectedObject.needDrawBluredPreview() && selectedObject.getDocument() != null) {
+                    if (LeleConfig.showDeleteDownloadedFile && !selectedObject.needDrawBluredPreview() && selectedObject.getDocument() != null) {
                         items.add(LocaleController.getString(R.string.DeleteDownloadedFile));
                         options.add(OPTION_CLEAR_FILE);
                         icons.add(R.drawable.msg_clear);
@@ -44776,7 +44850,7 @@ public class ChatActivity extends BaseFragment implements
                                 items.add(LocaleController.getString(R.string.ShareFile));
                                 options.add(OPTION_SHARE);
                                 icons.add(R.drawable.msg_shareout);
-                                if (NekoConfig.showOpenIn) {
+                                if (LeleConfig.showOpenIn) {
                                     items.add(LocaleController.getString(R.string.OpenInExternalApp));
                                     options.add(OPTION_OPEN_IN);
                                     icons.add(R.drawable.msg_openin);
@@ -44806,7 +44880,7 @@ public class ChatActivity extends BaseFragment implements
                                 items.add(LocaleController.getString(R.string.SaveToGallery));
                                 options.add(OPTION_SAVE_TO_GALLERY);
                                 icons.add(R.drawable.msg_gallery);
-                                if (NekoConfig.showCopyPhoto) {
+                                if (LeleConfig.showCopyPhoto) {
                                     items.add(LocaleController.getString(R.string.CopyPhoto));
                                     options.add(OPTION_COPY_PHOTO);
                                     icons.add(R.drawable.msg_copy);
@@ -44851,7 +44925,7 @@ public class ChatActivity extends BaseFragment implements
                         icons.add(R.drawable.msg_shareout);
                     }
                 } else if (type == 6) {
-                    if (NekoConfig.showDeleteDownloadedFile) {
+                    if (LeleConfig.showDeleteDownloadedFile) {
                         items.add(LocaleController.getString(R.string.DeleteDownloadedFile));
                         options.add(OPTION_CLEAR_FILE);
                         icons.add(R.drawable.msg_clear);
@@ -44866,7 +44940,7 @@ public class ChatActivity extends BaseFragment implements
                         items.add(LocaleController.getString(R.string.ShareFile));
                         options.add(OPTION_SHARE);
                         icons.add(R.drawable.msg_shareout);
-                        if (NekoConfig.showOpenIn && selectedObject.isVideo()) {
+                        if (LeleConfig.showOpenIn && selectedObject.isVideo()) {
                             items.add(LocaleController.getString(R.string.OpenInExternalApp));
                             options.add(OPTION_OPEN_IN);
                             icons.add(R.drawable.msg_openin);
@@ -44943,23 +45017,23 @@ public class ChatActivity extends BaseFragment implements
                     items.add(ForwardItem.getLastForwardOptionTitle(hasCaption, true));
                     options.add(ForwardItem.getLastForwardOption(hasCaption));
                     icons.add(R.drawable.msg_forward);
-                    if (NekoConfig.showNoQuoteForward) {
+                    if (LeleConfig.showNoQuoteForward) {
                         items.add(LocaleController.getString(R.string.NoQuoteForwardShort));
                         options.add(OPTION_FORWARD_NOQUOTE);
                         icons.add(R.drawable.msg_forward);
                     }
-                    if (NekoConfig.showSetReminder) {
+                    if (LeleConfig.showSetReminder) {
                         items.add(LocaleController.getString(R.string.SetReminder));
                         options.add(OPTION_SET_REMINDER);
                         icons.add(R.drawable.msg_calendar2);
                     }
-                    if (NekoConfig.showAddToSavedMessages && !UserObject.isUserSelf(currentUser)) {
+                    if (LeleConfig.showAddToSavedMessages && !UserObject.isUserSelf(currentUser)) {
                         items.add(LocaleController.getString(R.string.AddToSavedMessages));
                         options.add(OPTION_SAVE_MESSAGE);
                         icons.add(R.drawable.msg_saved);
                     }
                 }
-                if (NekoConfig.showRepeat) {
+                if (LeleConfig.showRepeat) {
                     if (!selectedObject.isSponsored() && chatMode != MODE_SCHEDULED && (!selectedObject.needDrawBluredPreview() || selectedObject.hasExtendedMediaPreview()) &&
                             !selectedObject.isLiveLocation() && selectedObject.type != MessageObject.TYPE_PHONE_CALL &&
                             selectedObject.type != MessageObject.TYPE_GIFT_PREMIUM && selectedObject.type != MessageObject.TYPE_GIFT_PREMIUM_CHANNEL && selectedObject.type != MessageObject.TYPE_SUGGEST_PHOTO && !selectedObject.isWallpaperAction()
@@ -44973,12 +45047,12 @@ public class ChatActivity extends BaseFragment implements
                     }
                 }
                 if (chatMode != MODE_SCHEDULED) {
-                    if (NekoConfig.showPrPr && allowChatActions && selectedObject.isFromUser() && !UserObject.isUserSelf(currentUser) && !ChatObject.isMonoForum(currentChat)) {
+                    if (LeleConfig.showPrPr && allowChatActions && selectedObject.isFromUser() && !UserObject.isUserSelf(currentUser) && !ChatObject.isMonoForum(currentChat)) {
                         items.add(LocaleController.getString(R.string.Prpr));
                         options.add(OPTION_PRPR);
                         icons.add(R.drawable.msg_prpr);
                     }
-                    if (NekoConfig.showQrCode && selectedObject.isPhoto()) {
+                    if (LeleConfig.showQrCode && selectedObject.isPhoto()) {
                         items.add(LocaleController.getString(R.string.QrCode));
                         options.add(OPTION_QR);
                         icons.add(R.drawable.msg_qrcode);
@@ -44998,7 +45072,7 @@ public class ChatActivity extends BaseFragment implements
                     options.add(OPTION_PIN);
                     icons.add(R.drawable.msg_pin);
                 }
-                if (chatMode != MODE_SCHEDULED && NekoConfig.showTranslate && (NekoConfig.transType != NekoConfig.TRANS_TYPE_EXTERNAL || !noforwards)) {
+                if (chatMode != MODE_SCHEDULED && LeleConfig.showTranslate && (LeleConfig.transType != LeleConfig.TRANS_TYPE_EXTERNAL || !noforwards)) {
                     MessageObject messageObject = getMessageHelper().getMessageForTranslate(selectedObject, selectedObjectGroup);
                     if (messageObject != null) {
                         items.add(messageObject.translated ? LocaleController.getString(R.string.UndoTranslate) : LocaleController.getString(R.string.TranslateMessage));
@@ -45032,7 +45106,7 @@ public class ChatActivity extends BaseFragment implements
                         items.add(LocaleController.getString(R.string.BlockContact));
                         options.add(OPTION_REPORT_CHAT);
                         icons.add(R.drawable.msg_block2);
-                    } else if (NekoConfig.showReport) {
+                    } else if (LeleConfig.showReport) {
                         items.add(LocaleController.getString(R.string.ReportChat));
                         options.add(OPTION_REPORT_CHAT);
                         icons.add(R.drawable.msg_report);
@@ -45043,7 +45117,12 @@ public class ChatActivity extends BaseFragment implements
                     options.add(OPTION_DELETE);
                     icons.add(deleteIconRes);
                 }
-                if (!selectedObject.isSponsored() && chatMode != MODE_QUICK_REPLIES && chatMode != MODE_SCHEDULED && NekoConfig.showMessageDetails) {
+                if (!selectedObject.isSponsored() && chatMode != MODE_QUICK_REPLIES && chatMode != MODE_SCHEDULED && canShowEditHistory(selectedObject)) {
+                    items.add(LocaleController.getString(R.string.ViewHistory));
+                    options.add(OPTION_EDIT_HISTORY);
+                    icons.add(R.drawable.msg_recent);
+                }
+                if (!selectedObject.isSponsored() && chatMode != MODE_QUICK_REPLIES && chatMode != MODE_SCHEDULED && LeleConfig.showMessageDetails) {
                     items.add(LocaleController.getString(R.string.MessageDetails));
                     options.add(OPTION_DETAILS);
                     icons.add(R.drawable.msg_info);
@@ -45550,7 +45629,7 @@ public class ChatActivity extends BaseFragment implements
     }
 
     private boolean hideBottomButton() {
-        return NekoConfig.hideChannelBottomButtons &&
+        return LeleConfig.hideChannelBottomButtons &&
                 chatMode == MODE_DEFAULT && !isReport() && currentChat != null &&
                 ChatObject.isChannel(currentChat) && currentChat.broadcast && !ChatObject.canWriteToChat(currentChat);
     }

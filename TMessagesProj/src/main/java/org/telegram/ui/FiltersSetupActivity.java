@@ -70,7 +70,7 @@ import org.telegram.ui.Components.UndoView;
 
 import java.util.ArrayList;
 
-import tw.nekomimi.nekogram.folder.FolderIconHelper;
+import com.fylnx.lelegram.folder.FolderIconHelper;
 
 public class FiltersSetupActivity extends BaseFragment implements NotificationCenter.NotificationCenterDelegate {
 

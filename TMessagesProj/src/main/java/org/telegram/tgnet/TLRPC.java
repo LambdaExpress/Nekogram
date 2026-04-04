@@ -44,7 +44,7 @@ import org.telegram.ui.Stories.MessageMediaStoryFull_old;
 import java.util.ArrayList;
 import java.util.HashMap;
 
-import tw.nekomimi.nekogram.helpers.WebAppHelper;
+import com.fylnx.lelegram.helpers.WebAppHelper;
 
 import me.vkryl.core.BitwiseUtils;
 
@@ -62348,8 +62348,45 @@ public class TLRPC {
     }
     //EncryptedChat end
 
+    public static class MessageEditHistoryEntry extends TLObject {
+        public static final int constructor = 0x7f3b18cd;
+
+        public int date;
+        public int edit_date;
+        public String text;
+
+        public static MessageEditHistoryEntry TLdeserialize(InputSerializedData stream, int constructor, boolean exception) {
+            if (MessageEditHistoryEntry.constructor != constructor) {
+                if (exception) {
+                    throw new RuntimeException(String.format("can't parse magic %x in MessageEditHistoryEntry", constructor));
+                }
+                return null;
+            }
+            MessageEditHistoryEntry result = new MessageEditHistoryEntry();
+            result.readParams(stream, exception);
+            return result;
+        }
+
+        @Override
+        public void readParams(InputSerializedData stream, boolean exception) {
+            date = stream.readInt32(exception);
+            edit_date = stream.readInt32(exception);
+            text = stream.readString(exception);
+        }
+
+        @Override
+        public void serializeToStream(OutputSerializedData stream) {
+            stream.writeInt32(constructor);
+            stream.writeInt32(date);
+            stream.writeInt32(edit_date);
+            stream.writeString(text != null ? text : "");
+        }
+    }
+
     //Message start
     public static class Message extends TLObject {
+        private static final String LOCAL_DELETED_PARAM = "local_deleted";
+
         public int id;
         public Peer from_id;
         public int from_boosts_applied;
@@ -62440,10 +62477,12 @@ public class TLRPC {
         public InputQuickReplyShortcut quick_reply_shortcut; //custom
         public long errorAllowedPriceStars; //custom
         public long errorNewPriceStars; //custom
+        public boolean deleted; //custom
         public boolean summarizedOpen; //custom
         public TL_textWithEntities summaryText; //custom
         public String translatedSummaryLanguage; //custom
         public TL_textWithEntities translatedSummaryText; //custom
+        public ArrayList<MessageEditHistoryEntry> editHistory; //custom
 
         public static Message TLdeserialize(InputSerializedData stream, int constructor, boolean exception) {
             Message result = null;
@@ -62622,7 +62661,7 @@ public class TLRPC {
                 if (stream.remaining() > 0) {
                     attachPath = stream.readString(false);
                     if (attachPath != null) {
-                        if ((id < 0 || send_state == 3 || legacy) && attachPath.startsWith("||")) {
+                        if (attachPath.startsWith("||")) {
                             String args[] = attachPath.split("\\|\\|");
                             if (args.length > 0) {
                                 if (params == null) {
@@ -62644,7 +62683,32 @@ public class TLRPC {
                         }
                     }
                 }
+            } else if (stream.remaining() > 0) {
+                attachPath = stream.readString(false);
+                if (attachPath != null) {
+                    if (attachPath.startsWith("||")) {
+                        String args[] = attachPath.split("\\|\\|");
+                        if (args.length > 0) {
+                            if (params == null) {
+                                params = new HashMap<>();
+                            }
+                            for (int a = 1; a < args.length - 1; a++) {
+                                String args2[] = args[a].split("\\|=\\|");
+                                if (args2.length == 2) {
+                                    params.put(args2[0], args2[1]);
+                                }
+                            }
+                            attachPath = args[args.length - 1].trim();
+                            if (legacy) {
+                                layer = Utilities.parseInt(params.get("legacy_layer"));
+                            }
+                        }
+                    } else {
+                        attachPath = attachPath.trim();
+                    }
+                }
             }
+            deleted = params != null && "1".equals(params.get(LOCAL_DELETED_PARAM));
             if ((flags & MESSAGE_FLAG_FWD) != 0 && id < 0) {
                 fwd_msg_id = stream.readInt32(false);
             }
@@ -62655,10 +62719,21 @@ public class TLRPC {
             if (ApplicationLoader.isAndroidTestEnvironment()) {
                 return;
             }
+            if (deleted) {
+                if (params == null) {
+                    params = new HashMap<>();
+                }
+                params.put(LOCAL_DELETED_PARAM, "1");
+            } else if (params != null) {
+                params.remove(LOCAL_DELETED_PARAM);
+                if (params.isEmpty()) {
+                    params = null;
+                }
+            }
 
             if (this instanceof TL_message_secret || this instanceof TL_message_secret_layer72) {
                 String path = attachPath != null ? attachPath : "";
-                if (send_state == 1 && params != null && params.size() > 0) {
+                if ((send_state == 1 || deleted) && params != null && params.size() > 0) {
                     for (HashMap.Entry<String, String> entry : params.entrySet()) {
                         path = entry.getKey() + "|=|" + entry.getValue() + "||" + path;
                     }
@@ -62674,7 +62749,7 @@ public class TLRPC {
                     layer = LAYER;
                     params.put("legacy_layer", "" + LAYER);
                 }
-                if ((id < 0 || send_state == 3 || legacy) && params != null && params.size() > 0) {
+                if ((id < 0 || send_state == 3 || legacy || deleted) && params != null && params.size() > 0) {
                     for (HashMap.Entry<String, String> entry : params.entrySet()) {
                         path = entry.getKey() + "|=|" + entry.getValue() + "||" + path;
                     }

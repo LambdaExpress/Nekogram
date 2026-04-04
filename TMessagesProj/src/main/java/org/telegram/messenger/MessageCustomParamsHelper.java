@@ -1,12 +1,18 @@
 package org.telegram.messenger;
 
+import android.text.TextUtils;
+
 import org.telegram.tgnet.InputSerializedData;
 import org.telegram.tgnet.NativeByteBuffer;
 import org.telegram.tgnet.OutputSerializedData;
 import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.TLRPC;
 
+import java.util.ArrayList;
+
 public class MessageCustomParamsHelper {
+    private static final int VECTOR_MAGIC = 0x1cb5c415;
+    private static final int MAX_LOCAL_EDIT_HISTORY = 10;
 
     public static boolean isEmpty(TLRPC.Message message) {
         return (
@@ -27,7 +33,8 @@ public class MessageCustomParamsHelper {
             message.translatedPoll == null &&
             message.translatedText == null &&
             message.errorAllowedPriceStars == 0 &&
-            message.errorNewPriceStars == 0
+            message.errorNewPriceStars == 0 &&
+            !hasLocalEditHistory(message)
         );
     }
 
@@ -50,6 +57,32 @@ public class MessageCustomParamsHelper {
         toMessage.summaryText = fromMessage.summaryText;
         toMessage.translatedSummaryText = fromMessage.translatedSummaryText;
         toMessage.translatedSummaryLanguage = fromMessage.translatedSummaryLanguage;
+        toMessage.editHistory = copyEditHistory(fromMessage.editHistory);
+    }
+
+    public static boolean hasLocalEditHistory(TLRPC.Message message) {
+        return message != null && message.editHistory != null && !message.editHistory.isEmpty();
+    }
+
+    public static void addLocalEditHistory(TLRPC.Message message, TLRPC.Message previousMessage) {
+        if (message == null || previousMessage == null || isSameLocalVersion(message, previousMessage)) {
+            return;
+        }
+        TLRPC.MessageEditHistoryEntry entry = createLocalEditHistoryEntry(previousMessage);
+        if (entry == null) {
+            return;
+        }
+        if (message.editHistory == null) {
+            message.editHistory = new ArrayList<>();
+        }
+        int count = message.editHistory.size();
+        if (count > 0 && isSameHistoryEntry(message.editHistory.get(count - 1), entry)) {
+            return;
+        }
+        message.editHistory.add(entry);
+        while (message.editHistory.size() > MAX_LOCAL_EDIT_HISTORY) {
+            message.editHistory.remove(0);
+        }
     }
 
 
@@ -63,6 +96,9 @@ public class MessageCustomParamsHelper {
             case 1:
                 params = new Params_v1(message);
                 break;
+            case 2:
+                params = new Params_v2(message);
+                break;
             default:
                 throw new RuntimeException("can't read params version = " + version);
         }
@@ -73,7 +109,7 @@ public class MessageCustomParamsHelper {
         if (isEmpty(message)) {
             return null;
         }
-        TLObject params = new Params_v1(message);
+        TLObject params = new Params_v2(message);
         try {
             NativeByteBuffer nativeByteBuffer = new NativeByteBuffer(params.getObjectSize());
             params.serializeToStream(nativeByteBuffer);
@@ -82,6 +118,79 @@ public class MessageCustomParamsHelper {
             e.printStackTrace();
         }
         return null;
+    }
+
+    private static ArrayList<TLRPC.MessageEditHistoryEntry> copyEditHistory(ArrayList<TLRPC.MessageEditHistoryEntry> history) {
+        if (history == null || history.isEmpty()) {
+            return null;
+        }
+        ArrayList<TLRPC.MessageEditHistoryEntry> result = new ArrayList<>(history.size());
+        for (int i = 0; i < history.size(); i++) {
+            TLRPC.MessageEditHistoryEntry source = history.get(i);
+            if (source == null) {
+                continue;
+            }
+            TLRPC.MessageEditHistoryEntry entry = new TLRPC.MessageEditHistoryEntry();
+            entry.date = source.date;
+            entry.edit_date = source.edit_date;
+            entry.text = source.text;
+            result.add(entry);
+        }
+        return result.isEmpty() ? null : result;
+    }
+
+    private static TLRPC.MessageEditHistoryEntry createLocalEditHistoryEntry(TLRPC.Message message) {
+        if (message == null) {
+            return null;
+        }
+        TLRPC.MessageEditHistoryEntry entry = new TLRPC.MessageEditHistoryEntry();
+        entry.date = message.date;
+        entry.edit_date = message.edit_date;
+        entry.text = message.message;
+        return entry;
+    }
+
+    private static boolean isSameLocalVersion(TLRPC.Message currentMessage, TLRPC.Message previousMessage) {
+        return currentMessage.edit_date == previousMessage.edit_date && TextUtils.equals(currentMessage.message, previousMessage.message);
+    }
+
+    private static boolean isSameHistoryEntry(TLRPC.MessageEditHistoryEntry first, TLRPC.MessageEditHistoryEntry second) {
+        return first != null && second != null &&
+                first.date == second.date &&
+                first.edit_date == second.edit_date &&
+                TextUtils.equals(first.text, second.text);
+    }
+
+    private static void writeEditHistory(OutputSerializedData stream, TLRPC.Message message) {
+        stream.writeInt32(VECTOR_MAGIC);
+        int count = message.editHistory.size();
+        stream.writeInt32(count);
+        for (int i = 0; i < count; i++) {
+            message.editHistory.get(i).serializeToStream(stream);
+        }
+    }
+
+    private static void readEditHistory(InputSerializedData stream, TLRPC.Message message, boolean exception) {
+        int magic = stream.readInt32(exception);
+        if (magic != VECTOR_MAGIC) {
+            if (exception) {
+                throw new RuntimeException(String.format("wrong Vector magic, got %x", magic));
+            }
+            return;
+        }
+        int count = stream.readInt32(exception);
+        if (count <= 0) {
+            message.editHistory = null;
+            return;
+        }
+        ArrayList<TLRPC.MessageEditHistoryEntry> history = new ArrayList<>(count);
+        for (int i = 0; i < count; i++) {
+            TLRPC.MessageEditHistoryEntry entry = TLRPC.MessageEditHistoryEntry.TLdeserialize(stream, stream.readInt32(exception), exception);
+            if (entry != null) {
+                history.add(entry);
+            }
+        }
+        message.editHistory = history.isEmpty() ? null : history;
     }
 
     private static class Params_v1 extends TLObject {
@@ -207,5 +316,137 @@ public class MessageCustomParamsHelper {
             }
         }
 
+    }
+
+    private static class Params_v2 extends TLObject {
+
+        private final static int VERSION = 2;
+        final TLRPC.Message message;
+        int flags = 0;
+
+        private Params_v2(TLRPC.Message message) {
+            this.message = message;
+            flags |= message.voiceTranscription != null ? 1 : 0;
+            flags |= message.voiceTranscriptionForce ? 2 : 0;
+
+            flags |= message.originalLanguage != null ? 4 : 0;
+            flags |= message.translatedToLanguage != null ? 8 : 0;
+            flags |= message.translatedText != null ? 16 : 0;
+
+            flags |= message.translatedPoll != null ? 32 : 0;
+
+            flags |= message.errorAllowedPriceStars != 0 ? 64 : 0;
+            flags |= message.errorNewPriceStars != 0 ? 128 : 0;
+
+            flags |= message.translatedVoiceTranscription != null ? 256 : 0;
+
+            flags = setFlag(flags, FLAG_10, message.summaryText != null);
+            flags = setFlag(flags, FLAG_11, message.translatedSummaryText != null);
+            flags = setFlag(flags, FLAG_12, message.translatedSummaryLanguage != null);
+            flags = setFlag(flags, FLAG_13, hasLocalEditHistory(message));
+        }
+
+        @Override
+        public void serializeToStream(OutputSerializedData stream) {
+            stream.writeInt32(VERSION);
+            flags = message.voiceTranscriptionForce ? (flags | 2) : (flags &~ 2);
+            flags = message.summarizedOpen ? (flags | 512) : (flags &~ 512);
+            flags = setFlag(flags, FLAG_13, hasLocalEditHistory(message));
+            stream.writeInt32(flags);
+            if ((flags & 1) != 0) {
+                stream.writeString(message.voiceTranscription);
+            }
+            stream.writeBool(message.voiceTranscriptionOpen);
+            stream.writeBool(message.voiceTranscriptionFinal);
+            stream.writeBool(message.voiceTranscriptionRated);
+            stream.writeInt64(message.voiceTranscriptionId);
+
+            stream.writeBool(message.premiumEffectWasPlayed);
+
+            if ((flags & 4) != 0) {
+                stream.writeString(message.originalLanguage);
+            }
+            if ((flags & 8) != 0) {
+                stream.writeString(message.translatedToLanguage);
+            }
+            if ((flags & 16) != 0) {
+                message.translatedText.serializeToStream(stream);
+            }
+            if ((flags & 32) != 0) {
+                message.translatedPoll.serializeToStream(stream);
+            }
+
+            if ((flags & 64) != 0) {
+                stream.writeInt64(message.errorAllowedPriceStars);
+            }
+            if ((flags & 128) != 0) {
+                stream.writeInt64(message.errorNewPriceStars);
+            }
+            if ((flags & 256) != 0) {
+                message.translatedVoiceTranscription.serializeToStream(stream);
+            }
+            if (hasFlag(flags, FLAG_10)) {
+                message.summaryText.serializeToStream(stream);
+            }
+            if (hasFlag(flags, FLAG_11)) {
+                message.translatedSummaryText.serializeToStream(stream);
+            }
+            if (hasFlag(flags, FLAG_12)) {
+                stream.writeString(message.translatedSummaryLanguage);
+            }
+            if (hasFlag(flags, FLAG_13)) {
+                writeEditHistory(stream, message);
+            }
+        }
+
+        @Override
+        public void readParams(InputSerializedData stream, boolean exception) {
+            flags = stream.readInt32(true);
+            if ((flags & 1) != 0) {
+                message.voiceTranscription = stream.readString(exception);
+            }
+            message.voiceTranscriptionForce = (flags & 2) != 0;
+            message.summarizedOpen = (flags & 512) != 0;
+            message.voiceTranscriptionOpen = stream.readBool(exception);
+            message.voiceTranscriptionFinal = stream.readBool(exception);
+            message.voiceTranscriptionRated = stream.readBool(exception);
+            message.voiceTranscriptionId = stream.readInt64(exception);
+
+            message.premiumEffectWasPlayed = stream.readBool(exception);
+
+            if ((flags & 4) != 0) {
+                message.originalLanguage = stream.readString(exception);
+            }
+            if ((flags & 8) != 0) {
+                message.translatedToLanguage = stream.readString(exception);
+            }
+            if ((flags & 16) != 0) {
+                message.translatedText = TLRPC.TL_textWithEntities.TLdeserialize(stream, stream.readInt32(exception), exception);
+            }
+            if ((flags & 32) != 0) {
+                message.translatedPoll = TranslateController.PollText.TLdeserialize(stream, stream.readInt32(exception), exception);
+            }
+            if ((flags & 64) != 0) {
+                message.errorAllowedPriceStars = stream.readInt64(exception);
+            }
+            if ((flags & 128) != 0) {
+                message.errorNewPriceStars = stream.readInt64(exception);
+            }
+            if ((flags & 256) != 0) {
+                message.translatedVoiceTranscription = TLRPC.TL_textWithEntities.TLdeserialize(stream, stream.readInt32(exception), exception);
+            }
+            if (hasFlag(flags, FLAG_10)) {
+                message.summaryText = TLRPC.TL_textWithEntities.TLdeserialize(stream, stream.readInt32(exception), exception);
+            }
+            if (hasFlag(flags, FLAG_11)) {
+                message.translatedSummaryText = TLRPC.TL_textWithEntities.TLdeserialize(stream, stream.readInt32(exception), exception);
+            }
+            if (hasFlag(flags, FLAG_12)) {
+                message.translatedSummaryLanguage = stream.readString(exception);
+            }
+            if (hasFlag(flags, FLAG_13)) {
+                readEditHistory(stream, message, exception);
+            }
+        }
     }
 }

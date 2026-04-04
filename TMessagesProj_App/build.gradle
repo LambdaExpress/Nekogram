@@ -10,14 +10,69 @@ dependencies {
     implementation project(':TMessagesProj')
 }
 
+def targetAbi = project.findProperty("targetAbi")?.toString()
+def nativeDebugSymbolLevel = (project.findProperty("nativeDebugSymbolLevel")?.toString() ?: "FULL").trim().toUpperCase(Locale.ROOT)
+def supportedNativeDebugSymbolLevels = ["NONE", "SYMBOL_TABLE", "FULL"] as Set
+if (!supportedNativeDebugSymbolLevels.contains(nativeDebugSymbolLevel)) {
+    throw new GradleException("Unsupported nativeDebugSymbolLevel '${nativeDebugSymbolLevel}'. Expected one of ${supportedNativeDebugSymbolLevels}.")
+}
+
+Properties localProperties = new Properties()
+if (project.rootProject.file('local.properties').exists()) {
+    localProperties.load(project.rootProject.file('local.properties').newDataInputStream())
+}
+
+Properties sentryProperties = new Properties()
+[project.rootProject.file('sentry.properties'), project.file('sentry.properties')].each { file ->
+    if (file.exists()) {
+        file.withInputStream { stream ->
+            sentryProperties.load(stream)
+        }
+    }
+}
+
+def firstNonBlank = { String... values ->
+    values.find { value -> value != null && !value.isBlank() }
+}
+
+def sentryAuthToken = firstNonBlank(
+        System.getenv("SENTRY_AUTH_TOKEN"),
+        project.findProperty("sentryAuthToken")?.toString(),
+        localProperties.getProperty("sentryAuthToken"),
+        sentryProperties.getProperty("auth.token")
+)
+def sentryOrg = firstNonBlank(
+        System.getenv("SENTRY_ORG"),
+        project.findProperty("sentryOrg")?.toString(),
+        localProperties.getProperty("sentryOrg"),
+        sentryProperties.getProperty("defaults.org")
+)
+def sentryProject = firstNonBlank(
+        System.getenv("SENTRY_PROJECT"),
+        project.findProperty("sentryProject")?.toString(),
+        localProperties.getProperty("sentryProject"),
+        sentryProperties.getProperty("defaults.project")
+)
+def sentryUploadEnabled = sentryAuthToken != null && sentryOrg != null && sentryProject != null
+
 sentry {
-    uploadNativeSymbols = true
-    includeSourceContext = true
+    uploadNativeSymbols = sentryUploadEnabled
+    includeSourceContext = sentryUploadEnabled
+    autoUploadProguardMapping = sentryUploadEnabled
     additionalSourceDirsForSourceContext = [ '../TMessagesProj/src/main/java' ]
+    if (sentryUploadEnabled) {
+        org = sentryOrg
+        projectName = sentryProject
+        authToken = sentryAuthToken
+    }
     autoInstallation {
         enabled = false
     }
     ignoredBuildTypes = ["debug"]
+}
+
+if (!sentryUploadEnabled) {
+    logger.lifecycle("[Sentry] Upload tasks disabled: missing auth token, org, or project.")
 }
 
 android {
@@ -27,11 +82,6 @@ android {
         resources {
             excludes += '**'
         }
-    }
-
-    Properties localProperties = new Properties()
-    if (project.rootProject.file('local.properties').exists()) {
-        localProperties.load(project.rootProject.file('local.properties').newDataInputStream())
     }
 
     signingConfigs {
@@ -63,7 +113,7 @@ android {
                 signingConfig signingConfigs.debug
             }
             proguardFiles '../TMessagesProj/proguard-rules.pro'
-            ndk.debugSymbolLevel 'FULL'
+            ndk.debugSymbolLevel nativeDebugSymbolLevel
         }
     }
 
@@ -84,10 +134,14 @@ android {
     splits.abi {
         var buildingBundle = gradle.startParameter.taskNames.any { it.startsWith("bundle") }
         enable !buildingBundle
-        universalApk true
+        universalApk targetAbi == null
 
         reset()
-        include "armeabi-v7a", "arm64-v8a", "x86", "x86_64"
+        if (targetAbi != null) {
+            include targetAbi
+        } else {
+            include "armeabi-v7a", "arm64-v8a", "x86", "x86_64"
+        }
     }
     namespace 'org.telegram.messenger.regular'
 
@@ -103,7 +157,7 @@ androidComponents {
             def abi = output.filters.find { it.filterType == FilterConfiguration.FilterType.ABI }?.identifier
             def abiName = abi ?: "universal"
             def baseVersionCode = output.versionCode.get()
-            output.outputFileName.set("Nekogram-${output.versionName.get()}-${baseVersionCode}-${abiName}.apk")
+            output.outputFileName.set("Lelegram-${output.versionName.get()}-${baseVersionCode}-${abiName}.apk")
             output.versionCode.set(baseVersionCode * 10)
         }
     }

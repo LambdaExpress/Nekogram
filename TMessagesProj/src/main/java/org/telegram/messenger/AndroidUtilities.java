@@ -234,8 +234,8 @@ import java.util.regex.Pattern;
 import java.util.zip.GZIPOutputStream;
 
 import me.vkryl.core.BitwiseUtils;
-import tw.nekomimi.nekogram.NekoConfig;
-import tw.nekomimi.nekogram.helpers.TypefaceHelper;
+import com.fylnx.lelegram.LeleConfig;
+import com.fylnx.lelegram.helpers.TypefaceHelper;
 
 public class AndroidUtilities {
     public final static int LIGHT_STATUS_BAR_OVERLAY = 0x0f000000, DARK_STATUS_BAR_OVERLAY = 0x33000000;
@@ -2980,8 +2980,8 @@ public class AndroidUtilities {
     }
 
     public static boolean isTabletForce() {
-        if (NekoConfig.tabletMode != NekoConfig.TABLET_AUTO) {
-            return NekoConfig.tabletMode == NekoConfig.TABLET_ENABLE;
+        if (LeleConfig.tabletMode != LeleConfig.TABLET_AUTO) {
+            return LeleConfig.tabletMode == LeleConfig.TABLET_ENABLE;
         }
         return ApplicationLoader.applicationContext != null && ApplicationLoader.applicationContext.getResources().getBoolean(R.bool.isTablet);
     }
@@ -3690,7 +3690,7 @@ public class AndroidUtilities {
         }
         File storageDir = null;
         if (Environment.MEDIA_MOUNTED.equals(Environment.getExternalStorageState())) {
-            storageDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "Nekogram");
+            storageDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "Lelegram");
             if (!storageDir.mkdirs()) {
                 if (!storageDir.exists()) {
                     if (BuildVars.LOGS_ENABLED) {
@@ -6703,12 +6703,14 @@ public class AndroidUtilities {
         return false;
     }
 
+    public static String getVersionNameWithBuildTime() {
+        return String.format(Locale.US, "%s (%d) %s", BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE, BuildConfig.BUILD_TIME_UTC);
+    }
+
     public static String getBuildVersionInfo() {
         try {
-            PackageInfo pInfo = ApplicationLoader.applicationContext.getPackageManager().getPackageInfo(ApplicationLoader.applicationContext.getPackageName(), 0);
-            int code = pInfo.versionCode / 10;
             String abi = BuildConfig.BUILD_TYPE + " " + Build.SUPPORTED_ABIS[0];
-            return formatString(R.string.NekogramVersion, String.format(Locale.US, "v%s (%d) %s", pInfo.versionName, code, abi), String.format(Locale.US, "v%s (%d)", BuildVars.BUILD_VERSION_STRING, BuildConfig.BUILD_VERSION), "@Duang");
+            return formatString(R.string.LelegramVersion, String.format(Locale.US, "v%s %s", getVersionNameWithBuildTime(), abi), String.format(Locale.US, "v%s (%d)", BuildVars.BUILD_VERSION_STRING, BuildConfig.BUILD_VERSION), "@Duang");
         } catch (Exception e) {
             FileLog.e(e);
         }

@@ -15,7 +15,7 @@ import androidx.core.view.ViewCompat;
 import java.util.HashMap;
 import java.util.Map;
 
-import tw.nekomimi.nekogram.accessibility.AccConfig;
+import com.fylnx.lelegram.accessibility.AccConfig;
 
 public abstract class SeekBarAccessibilityDelegate extends View.AccessibilityDelegate {
 

@@ -53,9 +53,9 @@ import java.util.Objects;
 import java.util.Set;
 
 import app.nekogram.translator.Http429Exception;
-import tw.nekomimi.nekogram.NekoConfig;
-import tw.nekomimi.nekogram.helpers.MessageHelper;
-import tw.nekomimi.nekogram.translator.Translator;
+import com.fylnx.lelegram.LeleConfig;
+import com.fylnx.lelegram.helpers.MessageHelper;
+import com.fylnx.lelegram.translator.Translator;
 
 public class TranslateController extends BaseController {
 
@@ -96,7 +96,7 @@ public class TranslateController extends BaseController {
     }
 
     public boolean isFeatureAvailable() {
-        return NekoConfig.autoTranslate && NekoConfig.transType != NekoConfig.TRANS_TYPE_EXTERNAL;
+        return LeleConfig.autoTranslate && LeleConfig.transType != LeleConfig.TRANS_TYPE_EXTERNAL;
     }
 
     public boolean isFeatureAvailable(long dialogId) {
@@ -265,7 +265,7 @@ public class TranslateController extends BaseController {
     public String getDialogTranslateTo(long dialogId) {
         String lang = translateDialogLanguage.get(dialogId);
         if (lang == null) {
-            lang = NekoConfig.translationTarget;
+            lang = LeleConfig.translationTarget;
             if (lang == null || Translator.getTargetLanguage(lang).equals(getDialogDetectedLanguage(dialogId))) {
                 lang = currentLanguage();
             }

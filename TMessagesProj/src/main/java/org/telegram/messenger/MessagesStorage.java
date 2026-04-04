@@ -69,6 +69,8 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
+import com.fylnx.lelegram.LeleConfig;
+
 public class MessagesStorage extends BaseController {
 
     private DispatchQueue storageQueue;
@@ -14463,6 +14465,149 @@ public class MessagesStorage extends BaseController {
         return null;
     }
 
+    public void markMessagesAsLocalDeleted(long dialogId, ArrayList<Integer> messages, boolean useQueue) {
+        if (messages == null || messages.isEmpty()) {
+            return;
+        }
+        if (useQueue) {
+            storageQueue.postRunnable(() -> markMessagesAsLocalDeletedInternal(dialogId, messages));
+        } else {
+            markMessagesAsLocalDeletedInternal(dialogId, messages);
+        }
+    }
+
+    public void markHistoryAsLocalDeleted(long dialogId, int maxId, boolean useQueue) {
+        if (maxId <= 0) {
+            return;
+        }
+        if (useQueue) {
+            storageQueue.postRunnable(() -> markHistoryAsLocalDeletedInternal(dialogId, maxId));
+        } else {
+            markHistoryAsLocalDeletedInternal(dialogId, maxId);
+        }
+    }
+
+    public void keepDialogMessagesAsLocalDeleted(long dialogId) {
+        if (!LeleConfig.keepDeletedMessages) {
+            return;
+        }
+        storageQueue.postRunnable(() -> keepDialogMessagesAsLocalDeletedInternal(dialogId));
+    }
+
+    private void markMessagesAsLocalDeletedInternal(long dialogId, ArrayList<Integer> messages) {
+        String ids = TextUtils.join(",", messages);
+        updateLocalDeletedFlag("messages_v2",
+                dialogId == 0
+                        ? String.format(Locale.US, "SELECT mid, uid, data FROM messages_v2 WHERE mid IN(%s) AND is_channel = 0", ids)
+                        : String.format(Locale.US, "SELECT mid, uid, data FROM messages_v2 WHERE mid IN(%s) AND uid = %d", ids, dialogId));
+        if (dialogId < 0) {
+            updateLocalDeletedFlag("messages_topics", String.format(Locale.US, "SELECT mid, uid, data FROM messages_topics WHERE mid IN(%s) AND uid = %d", ids, dialogId));
+        }
+    }
+
+    private void markHistoryAsLocalDeletedInternal(long dialogId, int maxId) {
+        updateLocalDeletedFlag("messages_v2", String.format(Locale.US, "SELECT mid, uid, data FROM messages_v2 WHERE uid = %d AND mid <= %d", dialogId, maxId));
+        updateLocalDeletedFlag("messages_topics", String.format(Locale.US, "SELECT mid, uid, data FROM messages_topics WHERE uid = %d AND mid <= %d", dialogId, maxId));
+    }
+
+    private boolean keepDialogMessagesAsLocalDeletedInternal(long dialogId) {
+        SQLiteCursor cursor = null;
+        SQLitePreparedStatement state = null;
+        try {
+            markHistoryAsLocalDeletedInternal(dialogId, Integer.MAX_VALUE);
+
+            int lastMid = 0;
+            int lastDate = 0;
+            long lastGroupId = 0;
+            boolean hasGroupId = false;
+
+            cursor = database.queryFinalized(String.format(Locale.US, "SELECT mid, date, group_id FROM messages_v2 WHERE uid = %d ORDER BY date DESC, mid DESC LIMIT 1", dialogId));
+            if (cursor.next()) {
+                lastMid = cursor.intValue(0);
+                lastDate = cursor.intValue(1);
+                if (!cursor.isNull(2)) {
+                    lastGroupId = cursor.longValue(2);
+                    hasGroupId = true;
+                }
+            }
+            cursor.dispose();
+            cursor = null;
+
+            if (lastMid == 0) {
+                return false;
+            }
+
+            state = database.executeFast("UPDATE dialogs SET date = ?, last_mid = ?, last_mid_group = ? WHERE did = ?");
+            state.requery();
+            state.bindInteger(1, lastDate);
+            state.bindInteger(2, lastMid);
+            if (hasGroupId) {
+                state.bindLong(3, lastGroupId);
+            } else {
+                state.bindNull(3);
+            }
+            state.bindLong(4, dialogId);
+            state.step();
+            return true;
+        } catch (Exception e) {
+            checkSQLException(e);
+        } finally {
+            if (cursor != null) {
+                cursor.dispose();
+            }
+            if (state != null) {
+                state.dispose();
+            }
+        }
+        return false;
+    }
+
+    private void updateLocalDeletedFlag(String table, String query) {
+        SQLiteCursor cursor = null;
+        SQLitePreparedStatement state = null;
+        try {
+            cursor = database.queryFinalized(query);
+            state = database.executeFast("UPDATE " + table + " SET data = ? WHERE mid = ? AND uid = ?");
+            while (cursor.next()) {
+                int mid = cursor.intValue(0);
+                long uid = cursor.longValue(1);
+                NativeByteBuffer data = cursor.byteBufferValue(2);
+                if (data == null) {
+                    continue;
+                }
+                TLRPC.Message message = TLRPC.Message.TLdeserialize(data, data.readInt32(false), false);
+                if (message != null) {
+                    message.readAttachPath(data, getUserConfig().clientUserId);
+                }
+                data.reuse();
+                if (message == null || message.deleted) {
+                    continue;
+                }
+
+                message.deleted = true;
+                MessageObject.normalizeFlags(message);
+                NativeByteBuffer newData = new NativeByteBuffer(message.getObjectSize());
+                message.serializeToStream(newData);
+
+                state.requery();
+                state.bindByteBuffer(1, newData);
+                state.bindInteger(2, mid);
+                state.bindLong(3, uid);
+                state.step();
+                newData.reuse();
+            }
+        } catch (Exception e) {
+            checkSQLException(e);
+        } finally {
+            if (cursor != null) {
+                cursor.dispose();
+            }
+            if (state != null) {
+                state.dispose();
+            }
+        }
+    }
+
     private void fixUnsupportedMedia(TLRPC.Message message) {
         if (message == null) {
             return;
@@ -15280,6 +15425,7 @@ public class MessagesStorage extends BaseController {
                                     if (customParams != null) {
                                         customParams.reuse();
                                     }
+                                    MessageCustomParamsHelper.addLocalEditHistory(message, oldMessage);
                                 }
                                 boolean oldMention = cursor.intValue(3) != 0;
                                 int readState = cursor.intValue(4);
@@ -16332,6 +16478,17 @@ public class MessagesStorage extends BaseController {
                     int messageDate = 0;
 
                     TLRPC.Message message = new_dialogMessage.get(dialog.id);
+                    if (LeleConfig.keepDeletedMessages && dialog.top_message == 0 && message == null && !DialogObject.isFolderDialogId(dialog.id)) {
+                        keepDialogMessagesAsLocalDeletedInternal(dialog.id);
+                        cursor = database.queryFinalized(String.format(Locale.US, "SELECT mid, date FROM messages_v2 WHERE uid = %d ORDER BY date DESC, mid DESC LIMIT 1", dialog.id));
+                        if (cursor.next()) {
+                            dialog.top_message = cursor.intValue(0);
+                            messageDate = cursor.intValue(1);
+                            dialog.last_message_date = messageDate;
+                        }
+                        cursor.dispose();
+                        cursor = null;
+                    }
                     if (message != null) {
                         messageDate = Math.max(message.date, messageDate);
 

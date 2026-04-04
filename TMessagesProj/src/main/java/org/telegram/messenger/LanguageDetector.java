@@ -1,6 +1,6 @@
 package org.telegram.messenger;
 
-import tw.nekomimi.nekogram.translator.Translator;
+import com.fylnx.lelegram.translator.Translator;
 
 public class LanguageDetector {
     public interface StringCallback {
