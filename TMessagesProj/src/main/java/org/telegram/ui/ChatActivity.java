@@ -166,6 +166,7 @@ import org.telegram.messenger.LiteMode;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MediaController;
 import org.telegram.messenger.MediaDataController;
+import org.telegram.messenger.MessageCustomParamsHelper;
 import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.MessagePreviewParams;
 import org.telegram.messenger.MessageSuggestionParams;
@@ -307,9 +308,12 @@ import com.fylnx.lelegram.forward.ForwardContext;
 import com.fylnx.lelegram.forward.ForwardDrawable;
 import com.fylnx.lelegram.forward.ForwardItem;
 import com.fylnx.lelegram.forward.ForwardPopupWrapper;
+import com.fylnx.lelegram.forward.ForwardRestrictionsHelper;
 import com.fylnx.lelegram.MessageEditHistoryActivity;
 import com.fylnx.lelegram.MessageDetailsActivity;
 import com.fylnx.lelegram.LeleConfig;
+import com.fylnx.lelegram.copy.CopyRestrictionsHelper;
+import com.fylnx.lelegram.protection.ContentProtectionHelper;
 import com.fylnx.lelegram.helpers.MessageHelper;
 import com.fylnx.lelegram.helpers.QrHelper;
 import com.fylnx.lelegram.helpers.EmojiHelper;
@@ -637,6 +641,7 @@ public class ChatActivity extends BaseFragment implements
     private boolean searching;
     private String searchingQuery;
     private TLRPC.MessagesFilter searchingType;
+    private boolean searchingDeletedOnly;
     private String searchingHashtag;
     private int hashtagSearchSelectedIndex;
     private int searchLastCount;
@@ -1877,7 +1882,7 @@ public class ChatActivity extends BaseFragment implements
                     return false;
                 }
                 var messageGroup = getValidGroupedMessage(message);
-                var noforwards = isPeerNoForwards() || message.messageOwner.noforwards || getDialogId() == UserObject.VERIFY;
+                var noforwards = ContentProtectionHelper.shouldBlockProtectedAction(isPeerNoForwards(), message.messageOwner.noforwards) || getDialogId() == UserObject.VERIFY;
                 boolean allowChatActions = true;
                 boolean allowEdit = message.canEditMessage(currentChat) && !chatActivityEnterView.hasAudioToSend() && message.getDialogId() != mergeDialogId && message.type != MessageObject.TYPE_STORY && message.type != MessageObject.TYPE_POLL;
                 if (allowEdit && messageGroup != null) {
@@ -1921,7 +1926,7 @@ public class ChatActivity extends BaseFragment implements
                     case LeleConfig.DOUBLE_TAP_ACTION_REPLY:
                         return message.getId() > 0 && allowChatActions;
                     case LeleConfig.DOUBLE_TAP_ACTION_SAVE:
-                        return !message.isSponsored() && chatMode != MODE_SCHEDULED && (!message.needDrawBluredPreview() || message.hasExtendedMediaPreview()) && !message.isLiveLocation() && message.type != MessageObject.TYPE_PHONE_CALL && !noforwards && message.type != MessageObject.TYPE_GIFT_PREMIUM && !UserObject.isUserSelf(currentUser);
+                        return !message.isSponsored() && chatMode != MODE_SCHEDULED && (!message.needDrawBluredPreview() || message.hasExtendedMediaPreview()) && !message.isLiveLocation() && message.type != MessageObject.TYPE_PHONE_CALL && !isForwardRestricted(message) && message.type != MessageObject.TYPE_GIFT_PREMIUM && !UserObject.isUserSelf(currentUser);
                     case LeleConfig.DOUBLE_TAP_ACTION_REPEAT:
                         return allowChatActions && (!(isThreadChat() && !isTopic) && !noforwards || getMessageHelper().getMessageForRepeat(message, messageGroup) != null) && !message.isSponsored() && chatMode != MODE_SCHEDULED && (!message.needDrawBluredPreview() || message.hasExtendedMediaPreview()) && !message.isLiveLocation() && message.type != MessageObject.TYPE_PHONE_CALL && message.type != MessageObject.TYPE_GIFT_PREMIUM && !UserObject.isUserSelf(currentUser);
                     case LeleConfig.DOUBLE_TAP_ACTION_EDIT:
@@ -3620,10 +3625,7 @@ public class ChatActivity extends BaseFragment implements
             if (chatActivity != null && chatActivity.getDialogId() == UserObject.VERIFY) {
                 return false;
             }
-            final boolean noforwards = (
-                chatActivity != null && chatActivity.isPeerNoForwards() ||
-                selectedView != null && selectedView.getMessageObject() != null && selectedView.getMessageObject().messageOwner != null && selectedView.getMessageObject().messageOwner.noforwards
-            );
+            final boolean noforwards = chatActivity != null && selectedView != null && selectedView.getMessageObject() != null && ContentProtectionHelper.shouldBlockProtectedAction(chatActivity.getMessagesController(), selectedView.getMessageObject().getDialogId(), selectedView.getMessageObject());
             return !isFactCheck && (
                 chatActivity != null && chatActivity.getCurrentEncryptedChat() == null &&
                 (selectedView == null ||
@@ -3642,10 +3644,7 @@ public class ChatActivity extends BaseFragment implements
             if (chatActivity != null && chatActivity.getDialogId() == UserObject.VERIFY) {
                 return true;
             }
-            return chatActivity == null || !(
-                chatActivity.getDialogId() < 0 && chatActivity.getMessagesController().isPeerNoForwards(chatActivity.getDialogId()) ||
-                selectedView != null && selectedView.getMessageObject() != null && (selectedView.getMessageObject().messageOwner != null && selectedView.getMessageObject().messageOwner.noforwards)
-            );
+            return chatActivity == null || selectedView == null || selectedView.getMessageObject() == null || !ContentProtectionHelper.shouldBlockProtectedAction(chatActivity.getMessagesController(), selectedView.getMessageObject().getDialogId(), selectedView.getMessageObject());
         }
 
         @Override
@@ -8782,7 +8781,7 @@ public class ChatActivity extends BaseFragment implements
 
         flagSecure = new FlagSecureReason(getParentActivity().getWindow(), () ->
             currentEncryptedChat != null ||
-            isPeerNoForwards()
+            ContentProtectionHelper.shouldBlockProtectedAction(isPeerNoForwards(), false)
         );
 
         if (oldMessage != null) {
@@ -9037,7 +9036,7 @@ public class ChatActivity extends BaseFragment implements
                     updateSearchUpDownButtonVisibility(true);
                     updatePagedownButtonVisibility(true);
                     searchingQuery = searchItem.getSearchField().getText().toString();
-                    getMediaDataController().searchMessagesInChat(searchingQuery, dialog_id, mergeDialogId, classGuid, 0, threadMessageId, false, searchingUserMessages, searchingChatMessages, !TextUtils.isEmpty(searchingQuery) || searchingReaction != null, searchingReaction, searchingType);
+                    getMediaDataController().searchMessagesInChat(searchingQuery, dialog_id, mergeDialogId, classGuid, 0, threadMessageId, false, searchingUserMessages, searchingChatMessages, hasActiveMessagesSearchQuery(), searchingReaction, searchingType, searchingDeletedOnly);
                     AndroidUtilities.hideKeyboard(searchItem.getSearchField());
                     return true;
                 }
@@ -9246,7 +9245,7 @@ public class ChatActivity extends BaseFragment implements
         if (actionBarSearchTags != null) {
             actionBarSearchTags.setChosen(reaction, true);
         }
-        searchItemVisible = searching = !TextUtils.isEmpty(searchingQuery) || searchingReaction != null;
+        searchItemVisible = searching = hasActiveMessagesSearchQuery();
         updateBottomOverlay();
         updateSearchUpDownButtonVisibility(true);
     }
@@ -9260,8 +9259,8 @@ public class ChatActivity extends BaseFragment implements
     public void hitSearch() {
         searchWas = true;
         updateSearchButtons(0, 0, -1);
-        getMediaDataController().searchMessagesInChat(searchingQuery, dialog_id, mergeDialogId, classGuid, 0, threadMessageId, searchingUserMessages, searchingChatMessages, searchingReaction, searchingType);
-        searchItemVisible = searching = !TextUtils.isEmpty(searchingQuery) || searchingReaction != null;
+        getMediaDataController().searchMessagesInChat(searchingQuery, dialog_id, mergeDialogId, classGuid, 0, threadMessageId, searchingUserMessages, searchingChatMessages, searchingReaction, searchingType, searchingDeletedOnly);
+        searchItemVisible = searching = hasActiveMessagesSearchQuery();
         updateBottomOverlay();
         updateSearchUpDownButtonVisibility(true);
     }
@@ -10314,7 +10313,7 @@ public class ChatActivity extends BaseFragment implements
             actionModeViews.add(actionMode.addItemWithWidth(delete, R.drawable.msg_delete, AndroidUtilities.dp(54), LocaleController.getString(R.string.Delete)));
         }
         actionMode.setItemVisibility(edit, canEditMessagesCount == 1 && selectedMessagesIds[0].size() + selectedMessagesIds[1].size() == 1 ? View.VISIBLE : View.GONE);
-        actionMode.setItemVisibility(copy, !isPeerNoForwards() && selectedMessagesCanCopyIds[0].size() + selectedMessagesCanCopyIds[1].size() != 0 ? View.VISIBLE : View.GONE);
+        actionMode.setItemVisibility(copy, !ContentProtectionHelper.shouldBlockProtectedAction(isPeerNoForwards(), false) && selectedMessagesCanCopyIds[0].size() + selectedMessagesCanCopyIds[1].size() != 0 ? View.VISIBLE : View.GONE);
         actionMode.setItemVisibility(star, selectedMessagesCanStarIds[0].size() + selectedMessagesCanStarIds[1].size() != 0 ? View.VISIBLE : View.GONE);
         actionMode.setItemVisibility(delete, cantDeleteMessagesCount == 0 ? View.VISIBLE : View.GONE);
         actionMode.setItemVisibility(tag_message, getUserConfig().isPremium() ? View.VISIBLE : View.GONE);
@@ -10496,6 +10495,10 @@ public class ChatActivity extends BaseFragment implements
         add(Pair.create(LocaleController.getString(R.string.Mention), new TLRPC.TL_inputMessagesFilterMyMentions()));
     }};
 
+    private boolean hasActiveMessagesSearchQuery() {
+        return !TextUtils.isEmpty(searchingQuery) || searchingReaction != null || searchingType != null || searchingDeletedOnly;
+    }
+
     private void createSearchContainer() {
         if (searchContainer != null || getContext() == null) {
             return;
@@ -10635,18 +10638,39 @@ public class ChatActivity extends BaseFragment implements
                 filterPopup.setDimAlpha(0);
                 for (var filter : searchFilters) {
                     filterPopup.add(0, filter.first, () -> {
-                        if (searchingType == filter.second) {
+                        if (!searchingDeletedOnly && searchingType == filter.second) {
                             return;
                         }
+                        searchingDeletedOnly = false;
                         searchingType = filter.second;
                         getMediaDataController().clearFoundMessageObjects();
                         updateSearchButtons(0, 0, -1);
                         updateSearchUpDownButtonVisibility(true);
                         updatePagedownButtonVisibility(true);
                         searchingQuery = searchItem.getSearchField().getText().toString();
-                        getMediaDataController().searchMessagesInChat(searchingQuery, dialog_id, mergeDialogId, classGuid, 0, threadMessageId, searchingUserMessages, searchingChatMessages, searchingReaction, searchingType);
+                        searchItemVisible = searching = hasActiveMessagesSearchQuery();
+                        getMediaDataController().searchMessagesInChat(searchingQuery, dialog_id, mergeDialogId, classGuid, 0, threadMessageId, searchingUserMessages, searchingChatMessages, searchingReaction, searchingType, searchingDeletedOnly);
                     });
-                    if (searchingType == filter.second) {
+                    if (!searchingDeletedOnly && searchingType == filter.second) {
+                        filterPopup.putCheck();
+                    }
+                }
+                if (LeleConfig.keepDeletedMessages) {
+                    filterPopup.add(0, LocaleController.getString(R.string.DeletedFilter), () -> {
+                        if (searchingDeletedOnly) {
+                            return;
+                        }
+                        searchingDeletedOnly = true;
+                        searchingType = null;
+                        getMediaDataController().clearFoundMessageObjects();
+                        updateSearchButtons(0, 0, -1);
+                        updateSearchUpDownButtonVisibility(true);
+                        updatePagedownButtonVisibility(true);
+                        searchingQuery = searchItem.getSearchField().getText().toString();
+                        searchItemVisible = searching = hasActiveMessagesSearchQuery();
+                        getMediaDataController().searchMessagesInChat(searchingQuery, dialog_id, mergeDialogId, classGuid, 0, threadMessageId, searchingUserMessages, searchingChatMessages, searchingReaction, null, true);
+                    });
+                    if (searchingDeletedOnly) {
                         filterPopup.putCheck();
                     }
                 }
@@ -11324,7 +11348,8 @@ public class ChatActivity extends BaseFragment implements
         mentionContainer.getAdapter().searchUsernameOrHashtag(null, 0, null, false, true);
         searchItem.setSearchFieldHint(null);
         searchItem.clearSearchText();
-        getMediaDataController().searchMessagesInChat(searchingQuery = "", dialog_id, mergeDialogId, classGuid, 0, threadMessageId, searchingUserMessages, searchingChatMessages, searchingReaction, searchingType = null);
+        searchingDeletedOnly = false;
+        getMediaDataController().searchMessagesInChat(searchingQuery = "", dialog_id, mergeDialogId, classGuid, 0, threadMessageId, searchingUserMessages, searchingChatMessages, searchingReaction, searchingType = null, searchingDeletedOnly);
     }
 
     private void updateTranslateItemVisibility() {
@@ -12252,6 +12277,14 @@ public class ChatActivity extends BaseFragment implements
         return false;
     }
 
+    private boolean isForwardRestricted(boolean hasNoforwardsMessage) {
+        return getDialogId() == UserObject.VERIFY || ForwardRestrictionsHelper.shouldBlockForward(isPeerNoForwards(), hasNoforwardsMessage);
+    }
+
+    private boolean isForwardRestricted(MessageObject messageObject) {
+        return isForwardRestricted(messageObject != null && messageObject.messageOwner != null && messageObject.messageOwner.noforwards);
+    }
+
     private void share() {
         MessageObject msg = null;
         for (int a = 1; a >= 0; a--) {
@@ -12299,7 +12332,7 @@ public class ChatActivity extends BaseFragment implements
     }
 
     private void openForward(boolean fromActionBar) {
-        if (isPeerNoForwards() || hasSelectedNoforwardsMessage()) {
+        if (isForwardRestricted(hasSelectedNoforwardsMessage())) {
             // We should update text if user changed locale without re-opening chat activity
             String str;
             if (isPeerNoForwards()) {
@@ -13408,7 +13441,7 @@ public class ChatActivity extends BaseFragment implements
     }
 
     private void showTextSelectionHint(MessageObject messageObject) {
-        if (getParentActivity() == null || getMessagesController().isPeerNoForwards(messageObject.getDialogId()) || (messageObject != null && messageObject.messageOwner != null && messageObject.messageOwner.noforwards)) {
+        if (getParentActivity() == null || ContentProtectionHelper.shouldBlockProtectedAction(getMessagesController(), messageObject.getDialogId(), messageObject)) {
             return;
         }
         CharSequence text;
@@ -19055,7 +19088,8 @@ public class ChatActivity extends BaseFragment implements
             if (selectedMessagesIds[index].indexOfKey(messageObject.getId()) >= 0) {
                 selectedMessagesIds[index].remove(messageObject.getId());
                 if (!isReport()) {
-                    if ((messageObject.type == MessageObject.TYPE_TEXT || messageObject.isAnimatedEmoji() || messageObject.caption != null) && !(messageObject.messageOwner != null && messageObject.messageOwner.noforwards)) {
+                    boolean protectedContentRestricted = ContentProtectionHelper.shouldBlockProtectedAction(getMessagesController(), messageObject.getDialogId(), messageObject);
+                    if ((messageObject.type == MessageObject.TYPE_TEXT || messageObject.isAnimatedEmoji() || messageObject.caption != null) && !protectedContentRestricted) {
                         selectedMessagesCanCopyIds[index].remove(messageObject.getId());
                     }
                     if (!messageObject.isAnimatedEmoji() && (messageObject.isSticker() || messageObject.isAnimatedSticker()) && MessageObject.isStickerHasSet(messageObject.getDocument())) {
@@ -19067,7 +19101,7 @@ public class ChatActivity extends BaseFragment implements
                     if (!messageObject.canDeleteMessage(chatMode == MODE_SCHEDULED, currentChat)) {
                         cantDeleteMessagesCount--;
                     }
-                    boolean noforwards = isPeerNoForwards();
+                    boolean noforwards = protectedContentRestricted;
                     if (chatMode == MODE_SCHEDULED || !messageObject.canForwardMessage() || noforwards) {
                         cantForwardMessagesCount--;
                     } else {
@@ -19092,7 +19126,8 @@ public class ChatActivity extends BaseFragment implements
                 }
                 selectedMessagesIds[index].put(messageObject.getId(), messageObject);
                 if (!isReport()) {
-                    if ((messageObject.type == MessageObject.TYPE_TEXT || messageObject.isAnimatedEmoji() || messageObject.caption != null) && !(messageObject.messageOwner != null && messageObject.messageOwner.noforwards)) {
+                    boolean protectedContentRestricted = ContentProtectionHelper.shouldBlockProtectedAction(getMessagesController(), messageObject.getDialogId(), messageObject);
+                    if ((messageObject.type == MessageObject.TYPE_TEXT || messageObject.isAnimatedEmoji() || messageObject.caption != null) && !protectedContentRestricted) {
                         selectedMessagesCanCopyIds[index].put(messageObject.getId(), messageObject);
                     }
                     if (!messageObject.isAnimatedEmoji() && (messageObject.isSticker() || messageObject.isAnimatedSticker()) && MessageObject.isStickerHasSet(messageObject.getDocument())) {
@@ -19104,7 +19139,7 @@ public class ChatActivity extends BaseFragment implements
                     if (!messageObject.canDeleteMessage(chatMode == MODE_SCHEDULED, currentChat)) {
                         cantDeleteMessagesCount++;
                     }
-                    boolean noforwards = isPeerNoForwards();
+                    boolean noforwards = protectedContentRestricted;
                     if (chatMode == MODE_SCHEDULED || !messageObject.canForwardMessage() || noforwards) {
                         cantForwardMessagesCount++;
                     } else {
@@ -19150,7 +19185,7 @@ public class ChatActivity extends BaseFragment implements
                 ActionBarMenuItem tagItem = actionBar.createActionMode().getItem(tag_message);
                 ActionBarMenuItem shareItem = actionBar.createActionMode().getItem(share);
 
-                boolean noforwards = isPeerNoForwards() || hasSelectedNoforwardsMessage();
+                boolean noforwards = isForwardRestricted(hasSelectedNoforwardsMessage());
                 if (actionsButtonsLayout != null) {
                     actionsButtonsLayout.setForwardButtonDelegate(hasCaption, id -> {
                         setForwardParams(id == ForwardItem.ID_FORWARD_NOQUOTE, id == ForwardItem.ID_FORWARD_NOCAPTION);
@@ -19388,7 +19423,7 @@ public class ChatActivity extends BaseFragment implements
                                 MessageObject msg = selectedMessagesIds[a].valueAt(i);
                                 if (msg == null) continue;
                                 if (msg.isVoiceOnce() || msg.isRoundOnce()) continue;
-                                if (msg.messageOwner.noforwards) continue;
+                                if (ContentProtectionHelper.shouldBlockProtectedAction(getMessagesController(), msg.getDialogId(), msg)) continue;
                                 if (msg.isVoice() || msg.isRoundVideo())
                                     show = true;
                             }
@@ -23456,7 +23491,7 @@ public class ChatActivity extends BaseFragment implements
         } else if (id == NotificationCenter.chatSearchResultsLoading) {
             if (classGuid == (Integer) args[0]) {
                 if (searchItem != null) {
-                    searchItem.setShowSearchProgress(!TextUtils.isEmpty(searchingQuery) || searchingReaction != null);
+                    searchItem.setShowSearchProgress(hasActiveMessagesSearchQuery());
                 }
                 onSearchLoadingUpdate(true);
                 if (messagesSearchAdapter != null) {
@@ -26209,6 +26244,10 @@ public class ChatActivity extends BaseFragment implements
             }
 
             addToPolls(messageObject, old);
+            if (messageObject.messageOwner != null && old.messageOwner != null
+                    && (old.isEditing() || MessageCustomParamsHelper.hasLocalEditHistory(old.messageOwner))) {
+                MessageCustomParamsHelper.mergeLocalEditHistory(messageObject.messageOwner, old.messageOwner);
+            }
             if (messageObject.type >= 0) {
                 if (old.replyMessageObject != null) {
                     messageObject.replyMessageObject = old.replyMessageObject;
@@ -30335,8 +30374,11 @@ public class ChatActivity extends BaseFragment implements
             allowPin = false;
         }
         allowPin = allowPin && message.getId() > 0 && (message.messageOwner.action == null || message.messageOwner.action instanceof TLRPC.TL_messageActionEmpty) && !message.isExpiredStory() && message.type != MessageObject.TYPE_STORY_MENTION;
-        boolean noforwards = isPeerNoForwards() || message.messageOwner.noforwards || getDialogId() == UserObject.VERIFY;
+        boolean protectionRestricted = ContentProtectionHelper.shouldBlockProtectedAction(getMessagesController(), message.getDialogId(), message);
+        boolean noforwards = protectionRestricted || getDialogId() == UserObject.VERIFY;
         boolean noforwardsOrPaidMedia = noforwards || message.type == MessageObject.TYPE_PAID_MEDIA;
+        boolean copyRestricted = CopyRestrictionsHelper.shouldBlockCopy(getMessagesController(), message.getDialogId(), message);
+        boolean copyRestrictedOrPaidMedia = copyRestricted || message.type == MessageObject.TYPE_PAID_MEDIA;
         boolean allowUnpin = message.getDialogId() != mergeDialogId && allowPin && (pinnedMessageObjects.containsKey(message.getId()) || groupedMessages != null && !groupedMessages.messages.isEmpty() && pinnedMessageObjects.containsKey(groupedMessages.messages.get(0).getId())) && !message.isExpiredStory();
         boolean allowEdit = message.canEditMessage(currentChat) && !chatActivityEnterView.hasAudioToSend() && message.getDialogId() != mergeDialogId && message.type != MessageObject.TYPE_STORY && message.type != MessageObject.TYPE_POLL;
         if (allowEdit && groupedMessages != null) {
@@ -31500,7 +31542,7 @@ public class ChatActivity extends BaseFragment implements
                     }
                 }
 
-                boolean showNoForwards = (isPeerNoForwards() || message.messageOwner.noforwards && currentUser != null && currentUser.bot) && message.messageOwner.action == null && message.isSent() && !message.isEditing() && chatMode != MODE_SCHEDULED && chatMode != MODE_SAVED && getDialogId() != UserObject.VERIFY;
+                boolean showNoForwards = !LeleConfig.allowProtectedContentActions && (isPeerNoForwards() || message.messageOwner.noforwards && currentUser != null && currentUser.bot) && message.messageOwner.action == null && message.isSent() && !message.isEditing() && chatMode != MODE_SCHEDULED && chatMode != MODE_SAVED && getDialogId() != UserObject.VERIFY;
                 scrimPopupContainerLayout.addView(popupLayout, LayoutHelper.createLinearRelatively(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.LEFT, isReactionsAvailable ? 16 : 0, 0, isReactionsAvailable ? 36 : 0, 0));
                 scrimPopupContainerLayout.setPopupWindowLayout(popupLayout);
                 if (showNoForwards) {
@@ -32601,13 +32643,13 @@ public class ChatActivity extends BaseFragment implements
         var entities = transcription ? null : messageObject.messageOwner.entities;
         if (LeleConfig.transType != LeleConfig.TRANS_TYPE_LELE || messageObject.isSponsored()) {
             if (!messageObject.isPoll()) {
-                Translator.showTranslateDialog(getParentActivity(), messageText, entities, isPeerNoForwards() || messageObject.messageOwner.noforwards, this, link -> {
+                Translator.showTranslateDialog(getParentActivity(), messageText, entities, ContentProtectionHelper.shouldBlockProtectedAction(getMessagesController(), messageObject.getDialogId(), messageObject), this, link -> {
                     didPressMessageUrl(link, false, selectedObject, null);
                     return true;
                 }, sourceLanguage, cell, themeDelegate);
             } else {
                 String message = getMessageHelper().getMessagePlainText(messageObject);
-                Translator.showTranslateDialog(getParentActivity(), message, isPeerNoForwards() || messageObject.messageOwner.noforwards, this, link -> {
+                Translator.showTranslateDialog(getParentActivity(), message, ContentProtectionHelper.shouldBlockProtectedAction(getMessagesController(), messageObject.getDialogId(), messageObject), this, link -> {
                     didPressMessageUrl(link, false, selectedObject, null);
                     return true;
                 }, sourceLanguage, cell, themeDelegate);
@@ -34528,7 +34570,8 @@ public class ChatActivity extends BaseFragment implements
         if (searchItem != null) {
             searchItem.setSearchFieldText(text, false);
         }
-        getMediaDataController().searchMessagesInChat(searchingQuery = (text == null ? "" : text), dialog_id, mergeDialogId, classGuid, 0, threadMessageId, false, searchingUserMessages, searchingChatMessages, !TextUtils.isEmpty(text), searchingReaction, searchingType = null);
+        searchingDeletedOnly = false;
+        getMediaDataController().searchMessagesInChat(searchingQuery = (text == null ? "" : text), dialog_id, mergeDialogId, classGuid, 0, threadMessageId, false, searchingUserMessages, searchingChatMessages, !TextUtils.isEmpty(text), searchingReaction, searchingType = null, searchingDeletedOnly);
         updatePinnedMessageView(true);
     }
 
@@ -34618,7 +34661,8 @@ public class ChatActivity extends BaseFragment implements
             searchItem.setSearchFieldText(hashtag, false);
             searchItem.setSearchFieldHint(LocaleController.getString(R.string.SearchHashtagsHint));
         }
-        getMediaDataController().searchMessagesInChat(searchingQuery, dialog_id, mergeDialogId, classGuid, 0, threadMessageId, false, searchingUserMessages, searchingChatMessages, false, searchingReaction, null);
+        searchingDeletedOnly = false;
+        getMediaDataController().searchMessagesInChat(searchingQuery, dialog_id, mergeDialogId, classGuid, 0, threadMessageId, false, searchingUserMessages, searchingChatMessages, false, searchingReaction, null, searchingDeletedOnly);
         updatePinnedMessageView(true);
         hashtagSearchEmptyView.showProgress(true);
         showMessagesSearchListView(true);
@@ -35595,7 +35639,7 @@ public class ChatActivity extends BaseFragment implements
                     builder.setTitleMultipleLines(true);
                 }
                 final int finalTimestamp = timestamp;
-                boolean noforwards = isPeerNoForwards() || (messageObject != null && messageObject.messageOwner != null && messageObject.messageOwner.noforwards);
+                boolean noforwards = ContentProtectionHelper.shouldBlockProtectedAction(getMessagesController(), messageObject != null ? messageObject.getDialogId() : 0, messageObject);
                 builder.setItems(noforwards ? new CharSequence[] {LocaleController.getString(R.string.Open)} : new CharSequence[]{LocaleController.getString(R.string.Open), LocaleController.getString(R.string.Copy), LocaleController.getString(R.string.ShareFile)}, (dialog, which) -> {
                     if (which == 0) {
                         if (str.startsWith("video?")) {
@@ -35900,7 +35944,7 @@ public class ChatActivity extends BaseFragment implements
         if (url == null || getParentActivity() == null) {
             return;
         }
-        boolean noforwards = isPeerNoForwards() || (messageObject != null && messageObject.messageOwner != null && messageObject.messageOwner.noforwards);
+        boolean noforwards = ContentProtectionHelper.shouldBlockProtectedAction(getMessagesController(), messageObject != null ? messageObject.getDialogId() : 0, messageObject);
         if (url instanceof URLSpanMono) {
             if (!noforwards || getDialogId() == UserObject.VERIFY) {
                 ((URLSpanMono) url).copyToClipboard();
@@ -38073,7 +38117,7 @@ public class ChatActivity extends BaseFragment implements
                 hashtagSearchTabs.tabs.scrollToTab(defaultSearchPage, defaultSearchPage);
             }
 
-            getMediaDataController().searchMessagesInChat(searchingQuery, dialog_id, mergeDialogId, classGuid, 0, threadMessageId, searchingUserMessages, searchingChatMessages, searchingReaction, searchingType);
+            getMediaDataController().searchMessagesInChat(searchingQuery, dialog_id, mergeDialogId, classGuid, 0, threadMessageId, searchingUserMessages, searchingChatMessages, searchingReaction, searchingType, searchingDeletedOnly);
         }
 
         @Override
@@ -44565,8 +44609,11 @@ public class ChatActivity extends BaseFragment implements
             allowPin = false;
         }
         allowPin = allowPin && message.getId() > 0 && (message.messageOwner.action == null || message.messageOwner.action instanceof TLRPC.TL_messageActionEmpty) && !message.isExpiredStory() && message.type != MessageObject.TYPE_STORY_MENTION;
-        boolean noforwards = isPeerNoForwards() || message.messageOwner.noforwards || getDialogId() == UserObject.VERIFY;
+        boolean protectionRestricted = ContentProtectionHelper.shouldBlockProtectedAction(getMessagesController(), message.getDialogId(), message);
+        boolean noforwards = protectionRestricted || getDialogId() == UserObject.VERIFY;
         boolean noforwardsOrPaidMedia = noforwards || message.type == MessageObject.TYPE_PAID_MEDIA;
+        boolean copyRestricted = CopyRestrictionsHelper.shouldBlockCopy(getMessagesController(), message.getDialogId(), message);
+        boolean copyRestrictedOrPaidMedia = copyRestricted || message.type == MessageObject.TYPE_PAID_MEDIA;
         boolean allowUnpin = message.getDialogId() != mergeDialogId && allowPin && (pinnedMessageObjects.containsKey(message.getId()) || groupedMessages != null && !groupedMessages.messages.isEmpty() && pinnedMessageObjects.containsKey(groupedMessages.messages.get(0).getId())) && !message.isExpiredStory();
         boolean allowEdit = message.canEditMessage(currentChat) && !chatActivityEnterView.hasAudioToSend() && message.getDialogId() != mergeDialogId && message.type != MessageObject.TYPE_STORY && message.type != MessageObject.TYPE_POLL;
         if (allowEdit && groupedMessages != null) {
@@ -44634,7 +44681,7 @@ public class ChatActivity extends BaseFragment implements
         }
 
         if (type == -1) {
-            if ((selectedObject.type == MessageObject.TYPE_TEXT || selectedObject.isAnimatedEmoji() || selectedObject.isAnimatedEmojiStickers() || getMessageCaption(selectedObject, selectedObjectGroup) != null) && !noforwardsOrPaidMedia && !message.isExpiredStory()) {
+            if ((selectedObject.type == MessageObject.TYPE_TEXT || selectedObject.isAnimatedEmoji() || selectedObject.isAnimatedEmojiStickers() || getMessageCaption(selectedObject, selectedObjectGroup) != null) && !copyRestrictedOrPaidMedia && !message.isExpiredStory()) {
                 items.add(LocaleController.getString(R.string.Copy));
                 options.add(OPTION_COPY);
                 icons.add(R.drawable.msg_copy);
@@ -44727,7 +44774,7 @@ public class ChatActivity extends BaseFragment implements
             items.add(LocaleController.getString(R.string.Retry));
             options.add(OPTION_RETRY);
             icons.add(R.drawable.msg_retry);
-            if (!noforwardsOrPaidMedia) {
+            if (!copyRestrictedOrPaidMedia) {
                 items.add(LocaleController.getString(R.string.Copy));
                 options.add(OPTION_COPY);
                 icons.add(R.drawable.msg_copy);
@@ -44758,7 +44805,7 @@ public class ChatActivity extends BaseFragment implements
                     options.add(OPTION_REPLY);
                     icons.add(R.drawable.menu_reply);
                 }
-                if ((selectedObject.type == MessageObject.TYPE_TEXT || selectedObject.isDice() || selectedObject.isAnimatedEmoji() || selectedObject.isAnimatedEmojiStickers() || getMessageCaption(selectedObject, selectedObjectGroup) != null) && !noforwardsOrPaidMedia && !selectedObject.sponsoredCanReport) {
+                if ((selectedObject.type == MessageObject.TYPE_TEXT || selectedObject.isDice() || selectedObject.isAnimatedEmoji() || selectedObject.isAnimatedEmojiStickers() || getMessageCaption(selectedObject, selectedObjectGroup) != null) && !copyRestrictedOrPaidMedia && !selectedObject.sponsoredCanReport) {
                     items.add(LocaleController.getString(R.string.Copy));
                     options.add(OPTION_COPY);
                     icons.add(R.drawable.msg_copy);
@@ -44888,6 +44935,10 @@ public class ChatActivity extends BaseFragment implements
                             }
                         }
                     }
+                } else if (type == 4 && !selectedObject.hasRevealedExtendedMedia() && !selectedObject.needDrawBluredPreview() && !copyRestrictedOrPaidMedia && selectedObject.isPhoto() && LeleConfig.showCopyPhoto) {
+                    items.add(LocaleController.getString(R.string.CopyPhoto));
+                    options.add(OPTION_COPY_PHOTO);
+                    icons.add(R.drawable.msg_copy);
                 } else if (type == 5) {
                     items.add(LocaleController.getString(R.string.ApplyLocalizationFile));
                     options.add(OPTION_APPLY_LOCALIZATION_OR_THEME);
@@ -45010,7 +45061,7 @@ public class ChatActivity extends BaseFragment implements
                     }
                 }
                 if (!selectedObject.isSponsored() && chatMode != MODE_QUICK_REPLIES && chatMode != MODE_SCHEDULED && (!selectedObject.needDrawBluredPreview() || selectedObject.hasExtendedMediaPreview()) &&
-                    !selectedObject.isLiveLocation() && selectedObject.type != MessageObject.TYPE_PHONE_CALL && !noforwards && selectedObject.type != MessageObject.TYPE_SHARING_OFFER &&
+                    !selectedObject.isLiveLocation() && selectedObject.type != MessageObject.TYPE_PHONE_CALL && !isForwardRestricted(selectedObject) && selectedObject.type != MessageObject.TYPE_SHARING_OFFER &&
                     selectedObject.type != MessageObject.TYPE_GIFT_PREMIUM && selectedObject.type != MessageObject.TYPE_GIFT_OFFER && selectedObject.type != MessageObject.TYPE_GIFT_OFFER_REJECTED && selectedObject.type != MessageObject.TYPE_GIFT_PREMIUM_CHANNEL && selectedObject.type != MessageObject.TYPE_SUGGEST_PHOTO && !selectedObject.isWallpaperAction()
                     && !message.isExpiredStory() && message.type != MessageObject.TYPE_STORY_MENTION && message.type != MessageObject.TYPE_GIFT_STARS) {
                     var hasCaption = ForwardItem.hasCaption(selectedObject, selectedObjectGroup);
@@ -45133,7 +45184,7 @@ public class ChatActivity extends BaseFragment implements
                     options.add(OPTION_REPLY);
                     icons.add(R.drawable.menu_reply);
                 }
-                if ((selectedObject.type == MessageObject.TYPE_TEXT || selectedObject.isAnimatedEmoji() || selectedObject.isAnimatedEmojiStickers() || getMessageCaption(selectedObject, selectedObjectGroup) != null) && !noforwardsOrPaidMedia) {
+                if ((selectedObject.type == MessageObject.TYPE_TEXT || selectedObject.isAnimatedEmoji() || selectedObject.isAnimatedEmojiStickers() || getMessageCaption(selectedObject, selectedObjectGroup) != null) && !copyRestrictedOrPaidMedia) {
                     items.add(LocaleController.getString(R.string.Copy));
                     options.add(OPTION_COPY);
                     icons.add(R.drawable.msg_copy);
@@ -45485,7 +45536,7 @@ public class ChatActivity extends BaseFragment implements
         if (chatMode == MODE_SEARCH) {
             HashtagSearchController.getInstance(currentAccount).jumpToMessage(classGuid, hashtagSearchSelectedIndex + (searchUp ? 1 : -1), searchType);
         } else {
-            getMediaDataController().searchMessagesInChat(null, dialog_id, mergeDialogId, classGuid, searchUp ? (reversed ? 2 : 1) : (reversed ? 1 : 2), threadMessageId, searchingUserMessages, searchingChatMessages, searchingReaction, searchingType);
+            getMediaDataController().searchMessagesInChat(null, dialog_id, mergeDialogId, classGuid, searchUp ? (reversed ? 2 : 1) : (reversed ? 1 : 2), threadMessageId, searchingUserMessages, searchingChatMessages, searchingReaction, searchingType, searchingDeletedOnly);
             showMessagesSearchListView(false);
         }
     }

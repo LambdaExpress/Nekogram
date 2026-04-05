@@ -1,5 +1,7 @@
 package org.telegram.messenger;
 
+import com.fylnx.lelegram.protection.ContentProtectionHelper;
+
 import android.net.Uri;
 import android.text.Spannable;
 import android.text.SpannableString;
@@ -204,7 +206,7 @@ public class MessagePreviewParams {
 
     public MessagePreviewParams(boolean secret, boolean noforwards, boolean monoforum) {
         this.isSecret = secret;
-        this.noforwards = secret || noforwards;
+        this.noforwards = secret || ContentProtectionHelper.shouldBlockProtectedAction(noforwards, false);
         this.monoforum = monoforum;
     }
 

@@ -5062,6 +5062,171 @@ public class MessagesStorage extends BaseController {
         });
     }
 
+    public void searchLocalDeletedMessages(long dialogId, long mergeDialogId, long topicId, long replyMessageId, String query, TLRPC.User user, TLRPC.Chat chat, Utilities.Callback3<ArrayList<MessageObject>, ArrayList<TLRPC.User>, ArrayList<TLRPC.Chat>> done) {
+        if (done == null) {
+            return;
+        }
+        storageQueue.postRunnable(() -> {
+            ArrayList<MessageObject> messageObjects = new ArrayList<>();
+            ArrayList<TLRPC.User> users = new ArrayList<>();
+            ArrayList<TLRPC.Chat> chats = new ArrayList<>();
+            ArrayList<Long> usersToLoad = new ArrayList<>();
+            ArrayList<Long> chatsToLoad = new ArrayList<>();
+            try {
+                String searchQuery = TextUtils.isEmpty(query) ? null : query.trim().toLowerCase(Locale.ROOT);
+                if (TextUtils.isEmpty(searchQuery)) {
+                    searchQuery = null;
+                }
+                String searchTranslit = searchQuery == null ? null : LocaleController.getInstance().getTranslitString(searchQuery);
+                if (TextUtils.isEmpty(searchTranslit) || Objects.equals(searchQuery, searchTranslit)) {
+                    searchTranslit = null;
+                }
+
+                addLocalDeletedMessagesFromTable(messageObjects, usersToLoad, chatsToLoad, dialogId, topicId, replyMessageId, query, searchQuery, searchTranslit, user, chat);
+                if (mergeDialogId != 0 && topicId == 0 && mergeDialogId != dialogId) {
+                    addLocalDeletedMessagesFromTable(messageObjects, usersToLoad, chatsToLoad, mergeDialogId, 0, replyMessageId, query, searchQuery, searchTranslit, user, chat);
+                }
+
+                Collections.sort(messageObjects, (lhs, rhs) -> {
+                    int dateCompare = Integer.compare(rhs.messageOwner.date, lhs.messageOwner.date);
+                    if (dateCompare != 0) {
+                        return dateCompare;
+                    }
+                    return Integer.compare(rhs.getId(), lhs.getId());
+                });
+
+                if (!usersToLoad.isEmpty()) {
+                    getUsersInternal(usersToLoad, users);
+                }
+                if (!chatsToLoad.isEmpty()) {
+                    getChatsInternal(TextUtils.join(",", chatsToLoad), chats);
+                }
+            } catch (Exception e) {
+                FileLog.e(e);
+            }
+            AndroidUtilities.runOnUIThread(() -> done.run(messageObjects, users, chats));
+        });
+    }
+
+    private void addLocalDeletedMessagesFromTable(ArrayList<MessageObject> result, ArrayList<Long> usersToLoad, ArrayList<Long> chatsToLoad, long dialogId, long topicId, long replyMessageId, String originalQuery, String searchQuery, String searchTranslit, TLRPC.User user, TLRPC.Chat chat) {
+        SQLiteCursor cursor = null;
+        final long selfId = getUserConfig().getClientUserId();
+        try {
+            if (topicId != 0) {
+                cursor = database.queryFinalized("SELECT data, replydata, custom_params FROM messages_topics WHERE uid = ? AND topic_id = ? ORDER BY date DESC, mid DESC", dialogId, topicId);
+            } else {
+                cursor = database.queryFinalized("SELECT data, replydata, custom_params FROM messages_v2 WHERE uid = ? ORDER BY date DESC, mid DESC", dialogId);
+            }
+            while (cursor.next()) {
+                NativeByteBuffer data = cursor.byteBufferValue(0);
+                if (data == null) {
+                    continue;
+                }
+                TLRPC.Message message = TLRPC.Message.TLdeserialize(data, data.readInt32(false), false);
+                if (message != null) {
+                    message.readAttachPath(data, selfId);
+                }
+                data.reuse();
+                if (message == null || !message.deleted || !matchesLocalDeletedSender(message, user, chat)) {
+                    continue;
+                }
+                if (topicId == 0 && !matchesLocalDeletedThread(message, replyMessageId)) {
+                    continue;
+                }
+
+                NativeByteBuffer customParams = cursor.byteBufferValue(2);
+                MessageCustomParamsHelper.readLocalParams(message, customParams);
+                if (customParams != null) {
+                    customParams.reuse();
+                }
+
+                if (message.reply_to != null && (message.reply_to.reply_to_msg_id != 0 || message.reply_to.reply_to_random_id != 0) && !cursor.isNull(1)) {
+                    NativeByteBuffer replyData = cursor.byteBufferValue(1);
+                    if (replyData != null) {
+                        message.replyMessage = TLRPC.Message.TLdeserialize(replyData, replyData.readInt32(false), false);
+                        if (message.replyMessage != null) {
+                            message.replyMessage.readAttachPath(replyData, selfId);
+                            addUsersAndChatsFromMessage(message.replyMessage, usersToLoad, chatsToLoad, null);
+                        }
+                        replyData.reuse();
+                    }
+                }
+
+                addUsersAndChatsFromMessage(message, usersToLoad, chatsToLoad, null);
+                MessageObject messageObject = new MessageObject(currentAccount, message, null, null, null, null, null, true, true, 0, false, false, dialogId == selfId);
+                if (!matchesLocalDeletedQuery(searchQuery, searchTranslit, messageObject)) {
+                    continue;
+                }
+                if (!TextUtils.isEmpty(originalQuery)) {
+                    messageObject.setQuery(originalQuery);
+                }
+                result.add(messageObject);
+            }
+        } catch (Exception e) {
+            FileLog.e(e);
+        } finally {
+            if (cursor != null) {
+                cursor.dispose();
+            }
+        }
+    }
+
+    private boolean matchesLocalDeletedSender(TLRPC.Message message, TLRPC.User user, TLRPC.Chat chat) {
+        if (user == null && chat == null) {
+            return true;
+        }
+        if (message == null || message.from_id == null) {
+            return false;
+        }
+        if (user != null) {
+            return message.from_id.user_id == user.id;
+        }
+        return message.from_id.chat_id == chat.id || message.from_id.channel_id == chat.id;
+    }
+
+    private boolean matchesLocalDeletedThread(TLRPC.Message message, long replyMessageId) {
+        if (replyMessageId == 0) {
+            return true;
+        }
+        if (message == null) {
+            return false;
+        }
+        if (message.id == replyMessageId) {
+            return true;
+        }
+        if (message.reply_to == null) {
+            return false;
+        }
+        if (message.reply_to.reply_to_top_id != 0) {
+            return message.reply_to.reply_to_top_id == replyMessageId;
+        }
+        return message.reply_to.reply_to_msg_id == replyMessageId;
+    }
+
+    private boolean matchesLocalDeletedQuery(String searchQuery, String searchTranslit, MessageObject messageObject) {
+        if (TextUtils.isEmpty(searchQuery)) {
+            return true;
+        }
+        return containsLocalDeletedQuery(messageObject.messageText, searchQuery, searchTranslit)
+                || containsLocalDeletedQuery(messageObject.caption, searchQuery, searchTranslit)
+                || containsLocalDeletedQuery(messageObject.messageOwner != null ? messageObject.messageOwner.message : null, searchQuery, searchTranslit)
+                || containsLocalDeletedQuery(messageObject.getDocumentName(), searchQuery, searchTranslit)
+                || containsLocalDeletedQuery(messageObject.getMusicTitle(), searchQuery, searchTranslit)
+                || containsLocalDeletedQuery(messageObject.getMusicAuthor(), searchQuery, searchTranslit);
+    }
+
+    private boolean containsLocalDeletedQuery(CharSequence value, String searchQuery, String searchTranslit) {
+        if (TextUtils.isEmpty(value)) {
+            return false;
+        }
+        String text = value.toString().toLowerCase(Locale.ROOT);
+        if (text.contains(searchQuery) || searchTranslit != null && text.contains(searchTranslit)) {
+            return true;
+        }
+        String translit = LocaleController.getInstance().getTranslitString(text);
+        return !TextUtils.isEmpty(translit) && (translit.contains(searchQuery) || searchTranslit != null && translit.contains(searchTranslit));
+    }
+
     public void updateMessageReactions(long dialogId, int msgId, TLRPC.TL_messageReactions reactions) {
         storageQueue.postRunnable(() -> {
             SQLiteCursor cursor = null;
@@ -15392,12 +15557,15 @@ public class MessagesStorage extends BaseController {
                                 NativeByteBuffer data = cursor.byteBufferValue(1);
                                 if (data != null) {
                                     TLRPC.Message oldMessage = TLRPC.Message.TLdeserialize(data, data.readInt32(false), false);
+                                    int send_state = cursor.intValue(5);
+                                    if (oldMessage != null) {
+                                        oldMessage.send_state = send_state;
+                                    }
                                     oldMessage.readAttachPath(data, getUserConfig().clientUserId);
                                     data.reuse();
                                     if (reactionUpdates != null) {
                                         reactionUpdates.add(new SavedReactionsUpdate(selfId, oldMessage, message));
                                     }
-                                    int send_state = cursor.intValue(5);
                                     if (send_state != 3) {
                                         if (MessageObject.getFileName(oldMessage).equals(MessageObject.getFileName(message))) {
                                             message.attachPath = oldMessage.attachPath;

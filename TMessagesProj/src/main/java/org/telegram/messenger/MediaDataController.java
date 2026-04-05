@@ -3638,6 +3638,7 @@ public class MediaDataController extends BaseController {
     private ArrayList<MessageObject> deletedFromResultMessages = new ArrayList<>();
     private String lastSearchQuery;
     private TLRPC.MessagesFilter lastSearchFilter;
+    private boolean lastSearchDeletedOnly;
     private int lastReturnedNum;
     private boolean loadingMoreSearchMessages;
     private boolean loadingSearchLocal;
@@ -3749,14 +3750,34 @@ public class MediaDataController extends BaseController {
         searchResultMessages.clear();
         searchServerResultMessages.clear();
         searchLocalResultMessages.clear();
+        searchServerResultMessagesMap[0].clear();
+        searchServerResultMessagesMap[1].clear();
+        messagesLocalSearchCount = 0;
+        messagesSearchCount[0] = 0;
+        messagesSearchCount[1] = 0;
+        messagesSearchEndReached[0] = false;
+        messagesSearchEndReached[1] = false;
+        lastSearchDeletedOnly = false;
     }
 
     public boolean isMessageFound(int messageId, boolean mergeDialog) {
-        return searchServerResultMessagesMap[mergeDialog ? 1 : 0].indexOfKey(messageId) >= 0;
+        if (searchServerResultMessagesMap[mergeDialog ? 1 : 0].indexOfKey(messageId) >= 0) {
+            return true;
+        }
+        for (int i = 0; i < searchLocalResultMessages.size(); i++) {
+            if (searchLocalResultMessages.get(i).getId() == messageId) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public void searchMessagesInChat(String query, long dialogId, long mergeDialogId, int guid, int direction, long replyMessageId, TLRPC.User user, TLRPC.Chat chat, ReactionsLayoutInBubble.VisibleReaction reaction, TLRPC.MessagesFilter filter) {
-        searchMessagesInChat(query, dialogId, mergeDialogId, guid, direction, replyMessageId, false, user, chat, true, reaction, filter);
+        searchMessagesInChat(query, dialogId, mergeDialogId, guid, direction, replyMessageId, false, user, chat, true, reaction, filter, false);
+    }
+
+    public void searchMessagesInChat(String query, long dialogId, long mergeDialogId, int guid, int direction, long replyMessageId, TLRPC.User user, TLRPC.Chat chat, ReactionsLayoutInBubble.VisibleReaction reaction, TLRPC.MessagesFilter filter, boolean deletedOnly) {
+        searchMessagesInChat(query, dialogId, mergeDialogId, guid, direction, replyMessageId, false, user, chat, true, reaction, filter, deletedOnly);
     }
 
     public void jumpToSearchedMessage(int guid, int index) {
@@ -3797,15 +3818,15 @@ public class MediaDataController extends BaseController {
         int temp = lastReturnedNum;
         lastReturnedNum = searchResultMessages.size();
         loadingMoreSearchMessages = true;
-        searchMessagesInChat(null, lastDialogId, lastMergeDialogId, lastGuid, 1, lastReplyMessageId, false, lastSearchUser, lastSearchChat, false, lastReaction, lastSearchFilter);
+        searchMessagesInChat(null, lastDialogId, lastMergeDialogId, lastGuid, 1, lastReplyMessageId, false, lastSearchUser, lastSearchChat, false, lastReaction, lastSearchFilter, lastSearchDeletedOnly);
         lastReturnedNum = temp;
     }
 
     public boolean isSearchLoading() {
-        return reqId != 0;
+        return reqId != 0 || loadingSearchLocal;
     }
 
-    public void searchMessagesInChat(String query, long dialogId, long mergeDialogId, int guid, int direction, long replyMessageId, boolean internal, TLRPC.User user, TLRPC.Chat chat, boolean jumpToMessage, ReactionsLayoutInBubble.VisibleReaction reaction, TLRPC.MessagesFilter filter) {
+    public void searchMessagesInChat(String query, long dialogId, long mergeDialogId, int guid, int direction, long replyMessageId, boolean internal, TLRPC.User user, TLRPC.Chat chat, boolean jumpToMessage, ReactionsLayoutInBubble.VisibleReaction reaction, TLRPC.MessagesFilter filter, boolean deletedOnly) {
         int max_id = 0;
         long queryWithDialog = dialogId;
         boolean firstQuery = !internal;
@@ -3870,12 +3891,61 @@ public class MediaDataController extends BaseController {
         } else if (firstQuery) {
             messagesSearchEndReached[0] = messagesSearchEndReached[1] = false;
             messagesSearchCount[0] = messagesSearchCount[1] = 0;
+            messagesLocalSearchCount = 0;
             searchResultMessages.clear();
             searchLocalResultMessages.clear();
+            searchServerResultMessages.clear();
             searchServerResultMessagesMap[0].clear();
             searchServerResultMessagesMap[1].clear();
             getNotificationCenter().postNotificationName(NotificationCenter.chatSearchResultsLoading, guid);
         }
+        if (deletedOnly) {
+            lastSearchDeletedOnly = true;
+            lastSearchFilter = filter;
+            lastGuid = guid;
+            lastDialogId = dialogId;
+            lastSearchUser = user;
+            lastSearchChat = chat;
+            lastReplyMessageId = replyMessageId;
+            lastReaction = reaction;
+            lastSearchQuery = query;
+            lastMergeDialogId = 0;
+            loadingSearchLocal = true;
+            loadedPredirectedSearchLocal = false;
+            messagesSearchEndReached[0] = true;
+            messagesSearchEndReached[1] = true;
+            messagesSearchCount[0] = 0;
+            messagesSearchCount[1] = 0;
+            final int currentReqId = ++lastReqId;
+            final long localTopicId = replyMessageId != 0 && (
+                    dialogId == getUserConfig().getClientUserId() ||
+                    getMessagesStorage().isForum(dialogId, MessagesStorage.FORUM_TYPE_CHAT | MessagesStorage.FORUM_TYPE_BOT | MessagesStorage.FORUM_TYPE_DIRECT)
+            ) ? replyMessageId : 0;
+            getMessagesStorage().searchLocalDeletedMessages(dialogId, mergeDialogId, localTopicId, replyMessageId, query, user, chat, (messages, users, chats) -> {
+                if (currentReqId != lastReqId) {
+                    return;
+                }
+                loadingSearchLocal = false;
+                getMessagesController().putUsers(users, false);
+                getMessagesController().putChats(chats, false);
+                searchServerResultMessages.clear();
+                searchServerResultMessagesMap[0].clear();
+                searchServerResultMessagesMap[1].clear();
+                searchLocalResultMessages.clear();
+                searchLocalResultMessages.addAll(messages);
+                messagesLocalSearchCount = messages.size();
+                lastReturnedNum = 0;
+                updateSearchResults();
+                if (searchResultMessages.isEmpty()) {
+                    getNotificationCenter().postNotificationName(NotificationCenter.chatSearchResultsAvailable, guid, 0, getMask(), (long) 0, 0, 0, jumpToMessage);
+                } else {
+                    MessageObject messageObject = searchResultMessages.get(lastReturnedNum);
+                    getNotificationCenter().postNotificationName(NotificationCenter.chatSearchResultsAvailable, guid, messageObject.getId(), getMask(), messageObject.getDialogId(), lastReturnedNum, getSearchCount(), jumpToMessage);
+                }
+            });
+            return;
+        }
+        lastSearchDeletedOnly = false;
         final boolean isHashtag = query != null && (query.trim().startsWith("#") || query.trim().startsWith("$"));
         if (messagesSearchEndReached[0] && !messagesSearchEndReached[1] && mergeDialogId != 0) {
             queryWithDialog = mergeDialogId;
@@ -3923,11 +3993,11 @@ public class MediaDataController extends BaseController {
                             TLRPC.messages_Messages res = (TLRPC.messages_Messages) response;
                             messagesSearchEndReached[1] = res.messages.isEmpty();
                             messagesSearchCount[1] = res instanceof TLRPC.TL_messages_messagesSlice ? res.count : res.messages.size();
-                            searchMessagesInChat(req.q, dialogId, mergeDialogId, guid, direction, replyMessageId, true, user, chat, jumpToMessage, reaction, filter);
+                            searchMessagesInChat(req.q, dialogId, mergeDialogId, guid, direction, replyMessageId, true, user, chat, jumpToMessage, reaction, filter, deletedOnly);
                         } else {
                             messagesSearchEndReached[1] = true;
                             messagesSearchCount[1] = 0;
-                            searchMessagesInChat(req.q, dialogId, mergeDialogId, guid, direction, replyMessageId, true, user, chat, jumpToMessage, reaction, filter);
+                            searchMessagesInChat(req.q, dialogId, mergeDialogId, guid, direction, replyMessageId, true, user, chat, jumpToMessage, reaction, filter, deletedOnly);
                         }
                     }
                 }), ConnectionsManager.RequestFlagFailOnServerErrors);
@@ -3947,6 +4017,7 @@ public class MediaDataController extends BaseController {
         lastSearchFilter = filter;
         lastGuid = guid;
         lastDialogId = dialogId;
+        lastSearchDeletedOnly = false;
         lastSearchUser = user;
         lastSearchChat = chat;
         lastReplyMessageId = replyMessageId;
@@ -4077,7 +4148,7 @@ public class MediaDataController extends BaseController {
                                 }
                             }
                             if (queryWithDialogFinal == dialogId && messagesSearchEndReached[0] && mergeDialogId != 0 && !messagesSearchEndReached[1]) {
-                                searchMessagesInChat(lastSearchQuery, dialogId, mergeDialogId, guid, 0, replyMessageId, true, user, chat, jumpToMessage, lastReaction, lastSearchFilter);
+                                searchMessagesInChat(lastSearchQuery, dialogId, mergeDialogId, guid, 0, replyMessageId, true, user, chat, jumpToMessage, lastReaction, lastSearchFilter, deletedOnly);
                             }
                         };
                         if (isSaved) {

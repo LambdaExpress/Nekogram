@@ -8,6 +8,9 @@
 
 package org.telegram.messenger;
 
+import com.fylnx.lelegram.copy.CopyRestrictionsHelper;
+import com.fylnx.lelegram.protection.ContentProtectionHelper;
+
 import static org.telegram.messenger.AndroidUtilities.dp;
 import static org.telegram.messenger.AndroidUtilities.replaceTags;
 import static org.telegram.messenger.LocaleController.formatPluralSpannable;
@@ -315,6 +318,7 @@ public class MessageObject {
     public String previousMessage;
     public TLRPC.MessageMedia previousMedia;
     public ArrayList<TLRPC.MessageEntity> previousMessageEntities;
+    public ArrayList<TLRPC.MessageEditHistoryEntry> previousEditHistory;
     public String previousAttachPath;
 
     public SvgHelper.SvgDrawable pathThumb;
@@ -4252,20 +4256,23 @@ public class MessageObject {
                     videoEditedInfo.notReadyYet = notReadyYet;
                 }
             }
-            if (messageOwner.send_state == MESSAGE_SEND_STATE_EDITING && (param = messageOwner.params.get("prevMedia")) != null) {
-                SerializedData serializedData = new SerializedData(Base64.decode(param, Base64.DEFAULT));
-                int constructor = serializedData.readInt32(false);
-                previousMedia = TLRPC.MessageMedia.TLdeserialize(serializedData, constructor, false);
-                previousMessage = serializedData.readString(false);
-                previousAttachPath = serializedData.readString(false);
-                int count = serializedData.readInt32(false);
-                previousMessageEntities = new ArrayList<>(count);
-                for (int a = 0; a < count; a++) {
-                    constructor = serializedData.readInt32(false);
-                    TLRPC.MessageEntity entity = TLRPC.MessageEntity.TLdeserialize(serializedData, constructor, false);
-                    previousMessageEntities.add(entity);
+            if (messageOwner.send_state == MESSAGE_SEND_STATE_EDITING) {
+                previousEditHistory = MessageCustomParamsHelper.decodeEditHistory(messageOwner.params.get(MessageCustomParamsHelper.PREVIOUS_EDIT_HISTORY_PARAM));
+                if ((param = messageOwner.params.get(MessageCustomParamsHelper.PREVIOUS_MEDIA_PARAM)) != null) {
+                    SerializedData serializedData = new SerializedData(Base64.decode(param, Base64.DEFAULT));
+                    int constructor = serializedData.readInt32(false);
+                    previousMedia = TLRPC.MessageMedia.TLdeserialize(serializedData, constructor, false);
+                    previousMessage = serializedData.readString(false);
+                    previousAttachPath = serializedData.readString(false);
+                    int count = serializedData.readInt32(false);
+                    previousMessageEntities = new ArrayList<>(count);
+                    for (int a = 0; a < count; a++) {
+                        constructor = serializedData.readInt32(false);
+                        TLRPC.MessageEntity entity = TLRPC.MessageEntity.TLdeserialize(serializedData, constructor, false);
+                        previousMessageEntities.add(entity);
+                    }
+                    serializedData.cleanup();
                 }
-                serializedData.cleanup();
             }
         }
     }
@@ -8051,11 +8058,7 @@ public class MessageObject {
             return;
         }
         boolean hasUrls = applyEntities();
-        boolean noforwards = messageOwner != null && messageOwner.noforwards;
-        if (!noforwards) {
-            final long dialogId = getDialogId();
-            noforwards = MessagesController.getInstance(currentAccount).isPeerNoForwards(dialogId);
-        }
+        boolean copyRestricted = CopyRestrictionsHelper.shouldBlockCopy(MessagesController.getInstance(currentAccount), getDialogId(), this);
 
         textLayoutBlocks = new ArrayList<>();
         textWidth = 0;
@@ -8246,7 +8249,7 @@ public class MessageObject {
                     block.padBottom = dp(7);
                 }
             } else if (block.code) {
-                block.layoutCode(range.language, range.end - range.start, noforwards);
+                block.layoutCode(range.language, range.end - range.start, copyRestricted);
                 block.padTop = dp(4) + block.languageHeight + (block.first ? 0 : dp(5));
                 block.padBottom = dp(4) + (block.last ? 0 : dp(7)) + (block.hasCodeCopyButton ? dp(38) : 0);
             }
@@ -8542,11 +8545,7 @@ public class MessageObject {
         public TextLayoutBlocks(MessageObject messageObject, @NonNull CharSequence text, TextPaint textPaint, int width) {
             this.text = text;
             textWidth = 0;
-            boolean noforwards = messageObject != null && messageObject.messageOwner != null && messageObject.messageOwner.noforwards;
-            if (messageObject != null && !noforwards) {
-                final long dialogId = messageObject.getDialogId();
-                noforwards = MessagesController.getInstance(messageObject.currentAccount).isPeerNoForwards(dialogId);
-            }
+            boolean copyRestricted = CopyRestrictionsHelper.shouldBlockCopy(messageObject != null ? MessagesController.getInstance(messageObject.currentAccount) : null, messageObject != null ? messageObject.getDialogId() : 0, messageObject);
 
             hasCode = text instanceof Spanned && ((Spanned) text).getSpans(0, text.length(), CodeHighlighting.Span.class).length > 0;
             hasQuote = text instanceof Spanned && ((Spanned) text).getSpans(0, text.length(), QuoteSpan.QuoteStyleSpan.class).length > 0;
@@ -8708,7 +8707,7 @@ public class MessageObject {
                         block.padBottom = dp(7);
                     }
                 } else if (block.code) {
-                    block.layoutCode(range.language, range.end - range.start, noforwards);
+                    block.layoutCode(range.language, range.end - range.start, copyRestricted);
                     block.padTop = dp(4) + block.languageHeight + (block.first ? 0 : dp(5));
                     block.padBottom = dp(4) + (block.last ? 0 : dp(7)) + (block.hasCodeCopyButton ? dp(38) : 0);
                 }
@@ -10830,7 +10829,7 @@ public class MessageObject {
     public boolean canForwardMessage() {
         if (isQuickReply()) return false;
         if (type == TYPE_GIFT_STARS || type == TYPE_GIFT_THEME_UPDATE || type == TYPE_SUGGEST_BIRTHDAY || type == TYPE_GIFT_OFFER || type == TYPE_SHARING_OFFER) return false;
-        return !(messageOwner instanceof TLRPC.TL_message_secret) && !needDrawBluredPreview() && !isLiveLocation() && type != MessageObject.TYPE_PHONE_CALL && !isSponsored() && !messageOwner.noforwards;
+        return !(messageOwner instanceof TLRPC.TL_message_secret) && !needDrawBluredPreview() && !isLiveLocation() && type != MessageObject.TYPE_PHONE_CALL && !isSponsored() && !ContentProtectionHelper.shouldBlockProtectedAction(false, messageOwner.noforwards);
     }
 
     public boolean canEditMedia() {

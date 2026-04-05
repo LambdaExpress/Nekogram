@@ -329,7 +329,10 @@ import java.util.Map;
 import java.util.Objects;
 
 import com.fylnx.lelegram.LeleConfig;
+import com.fylnx.lelegram.copy.CopyRestrictionsHelper;
 import com.fylnx.lelegram.forward.ForwardItem;
+import com.fylnx.lelegram.forward.ForwardRestrictionsHelper;
+import com.fylnx.lelegram.protection.ContentProtectionHelper;
 import com.fylnx.lelegram.helpers.LensHelper;
 import com.fylnx.lelegram.helpers.MessageHelper;
 import com.fylnx.lelegram.helpers.QrHelper;
@@ -14077,7 +14080,8 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
         }
         setMenuItemIcon(false, true);
 
-        boolean noforwards = messageObject != null && (MessagesController.getInstance(currentAccount).isPeerNoForwards(messageObject.getDialogId()) || (messageObject.messageOwner != null && messageObject.messageOwner.noforwards) || messageObject.hasRevealedExtendedMedia());
+        boolean noforwards = messageObject != null && (ContentProtectionHelper.shouldBlockProtectedAction(MessagesController.getInstance(currentAccount), messageObject.getDialogId(), messageObject) || messageObject.hasRevealedExtendedMedia());
+        boolean forwardRestricted = messageObject != null && (ForwardRestrictionsHelper.shouldBlockForward(MessagesController.getInstance(currentAccount), messageObject.getDialogId(), messageObject) || messageObject.hasRevealedExtendedMedia());
         if (messageObject != null && messages == null) {
             if (messageObject.messageOwner != null && MessageObject.getMedia(messageObject.messageOwner) instanceof TLRPC.TL_messageMediaWebPage && MessageObject.getMedia(messageObject.messageOwner).webpage != null) {
                 TLRPC.WebPage webPage = MessageObject.getMedia(messageObject.messageOwner).webpage;
@@ -14130,7 +14134,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                     needSearchImageInArr = false;
                 } else if (currentAnimation != null) {
                     needSearchImageInArr = false;
-                    if (messageObject.canForwardMessage() && !noforwards) {
+                    if (messageObject.canForwardMessage() && !forwardRestricted) {
                         setItemVisible(sendItem, true, false);
                     }
                 } else if (!messageObject.scheduled && !messageObject.isQuickReply() && !messageObject.isSponsored() && !(MessageObject.getMedia(messageObject.messageOwner) instanceof TLRPC.TL_messageMediaInvoice) && !(MessageObject.getMedia(messageObject.messageOwner) instanceof TLRPC.TL_messageMediaWebPage) && (messageObject.messageOwner.action == null || messageObject.messageOwner.action instanceof TLRPC.TL_messageActionEmpty)) {
@@ -14151,7 +14155,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                         }
                         menuItem.showSubItem(gallery_menu_showall);
                     }
-                    setItemVisible(sendItem, !noforwards, false);
+                    setItemVisible(sendItem, !forwardRestricted, false);
                 } else if (isEmbedVideo && messageObject.eventId == 0) {
                     setItemVisible(sendItem, true, false);
                 }
@@ -14240,7 +14244,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                 } else {
                     menuItem.hideSubItem(gallery_menu_reply);
                 }
-                if (openingObject.canForwardMessage() && !noforwards) {
+                if (openingObject.canForwardMessage() && !forwardRestricted) {
                     setItemVisible(sendItem, true, false);
                 }
                 if (openingObject.canPreviewDocument()) {
@@ -14525,7 +14529,9 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
             actionBarContainer.setSubtitle(subtitle, animated);
 
             boolean isInvoice = newMessageObject.isInvoice();
-            boolean noforwards = MessagesController.getInstance(currentAccount).isPeerNoForwards(newMessageObject.getDialogId()) || (newMessageObject.messageOwner != null && newMessageObject.messageOwner.noforwards) || newMessageObject.hasRevealedExtendedMedia();
+            boolean noforwards = ContentProtectionHelper.shouldBlockProtectedAction(MessagesController.getInstance(currentAccount), newMessageObject.getDialogId(), newMessageObject) || newMessageObject.hasRevealedExtendedMedia();
+            boolean copyRestricted = CopyRestrictionsHelper.shouldBlockCopy(MessagesController.getInstance(currentAccount), newMessageObject.getDialogId(), newMessageObject) || newMessageObject.hasRevealedExtendedMedia();
+            boolean forwardRestricted = ForwardRestrictionsHelper.shouldBlockForward(MessagesController.getInstance(currentAccount), newMessageObject.getDialogId(), newMessageObject) || newMessageObject.hasRevealedExtendedMedia();
             if (isVideo) {
                 bottomLayout.setVisibility(View.VISIBLE);
                 bottomLayout.setTag(1);
@@ -14759,15 +14765,21 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                 }
                 title = getString(R.string.AttachDocument);
             }
-            if (DialogObject.isEncryptedDialog(currentDialogId) && !isEmbedVideo || noforwards) {
+            if (DialogObject.isEncryptedDialog(currentDialogId) && !isEmbedVideo || forwardRestricted) {
                 setItemVisible(sendItem, false, false);
             }
-            if (isEmbedVideo || newMessageObject.messageOwner.ttl != 0 && newMessageObject.messageOwner.ttl < 60 * 60 || noforwards) {
+            boolean shareRestricted = isEmbedVideo || newMessageObject.messageOwner.ttl != 0 && newMessageObject.messageOwner.ttl < 60 * 60 || noforwards;
+            boolean copyPhotoRestricted = isEmbedVideo || newMessageObject.messageOwner.ttl != 0 && newMessageObject.messageOwner.ttl < 60 * 60 || copyRestricted;
+            if (shareRestricted) {
                 allowShare = false;
                 galleryButton.setVisibility(View.GONE);
                 galleryGap.setVisibility(View.GONE);
-                menuItem.hideSubItem(gallery_menu_copy);
                 menuItem.hideSubItem(gallery_menu_share);
+                if (!copyPhotoRestricted && newMessageObject.isPhoto()) {
+                    menuItem.showSubItem(gallery_menu_copy);
+                } else {
+                    menuItem.hideSubItem(gallery_menu_copy);
+                }
                 if (hasLens) menuItem.hideSubItem(gallery_menu_lens);
                 setItemVisible(editItem, false, animated);
             } else {
@@ -15136,7 +15148,8 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
             }
             menuItem.hideSubItem(gallery_menu_translate);
             menuItem.hideSubItem(gallery_menu_hide_translation);
-            allowShare = !MessagesController.getInstance(currentAccount).isPeerNoForwards(currentDialogId) && (currentMessageObject == null || !currentMessageObject.hasRevealedExtendedMedia());
+            allowShare = !ContentProtectionHelper.shouldBlockProtectedAction(MessagesController.getInstance(currentAccount), currentDialogId, currentMessageObject) && (currentMessageObject == null || !currentMessageObject.hasRevealedExtendedMedia());
+            boolean copyRestricted = CopyRestrictionsHelper.shouldBlockCopy(MessagesController.getInstance(currentAccount), currentDialogId, currentMessageObject) || (currentMessageObject != null && currentMessageObject.hasRevealedExtendedMedia());
             TLRPC.PageBlock pageBlock = pageBlocksAdapter.get(switchingToIndex);
             caption = pageBlocksAdapter.getCaption(switchingToIndex);
             isVideo = pageBlocksAdapter.isVideo(switchingToIndex);
@@ -15191,8 +15204,18 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                     menuItem.hideSubItem(gallery_menu_copy);
                     if (hasLens) menuItem.hideSubItem(gallery_menu_lens);
                 } else {
-                    menuItem.showSubItem(gallery_menu_copy);
-                    if (hasLens) menuItem.showSubItem(gallery_menu_lens);
+                    if (!copyRestricted) {
+                        menuItem.showSubItem(gallery_menu_copy);
+                    } else {
+                        menuItem.hideSubItem(gallery_menu_copy);
+                    }
+                    if (hasLens) {
+                        if (!copyRestricted && allowShare) {
+                            menuItem.showSubItem(gallery_menu_lens);
+                        } else {
+                            menuItem.hideSubItem(gallery_menu_lens);
+                        }
+                    }
                 }
                 menuItem.hideSubItem(gallery_menu_savegif);
                 menuItem.checkHideMenuItem();
@@ -15660,6 +15683,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                 AndroidUtilities.cancelRunOnUIThread(hideActionBarRunnable);
             }
             if (sharedMediaType == MediaDataController.MEDIA_FILE) {
+                boolean copyRestricted = currentMessageObject != null && (CopyRestrictionsHelper.shouldBlockCopy(MessagesController.getInstance(currentAccount), currentMessageObject.getDialogId(), currentMessageObject) || currentMessageObject.hasRevealedExtendedMedia());
                 if (canZoom = newMessageObject.canPreviewDocument()) {
                     if (allowShare) {
                         galleryButton.setVisibility(View.VISIBLE);
@@ -15674,9 +15698,15 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                     galleryGap.setVisibility(View.GONE);
                     setDoubleTapEnabled(false);
                 }
-                if (canZoom && allowShare && !isVideo) {
+                if (canZoom && !isVideo && !copyRestricted) {
                     menuItem.showSubItem(gallery_menu_copy);
-                    if (hasLens) menuItem.showSubItem(gallery_menu_lens);
+                    if (hasLens) {
+                        if (allowShare) {
+                            menuItem.showSubItem(gallery_menu_lens);
+                        } else {
+                            menuItem.hideSubItem(gallery_menu_lens);
+                        }
+                    }
                 } else {
                     menuItem.hideSubItem(gallery_menu_copy);
                     if (hasLens) menuItem.hideSubItem(gallery_menu_lens);
@@ -17369,9 +17399,8 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                 WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM |
                 WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS;
             if (chatActivity != null && chatActivity.getCurrentEncryptedChat() != null ||
-                avatarsDialogId != 0 && MessagesController.getInstance(currentAccount).isPeerNoForwards(avatarsDialogId) ||
-                messageObject != null && (MessagesController.getInstance(currentAccount).isPeerNoForwards(messageObject.getDialogId()) ||
-                (messageObject.messageOwner != null && messageObject.messageOwner.noforwards)) || messageObject != null && messageObject.hasRevealedExtendedMedia()
+                avatarsDialogId != 0 && ContentProtectionHelper.shouldBlockProtectedAction(MessagesController.getInstance(currentAccount), avatarsDialogId, null) ||
+                messageObject != null && ContentProtectionHelper.shouldBlockProtectedAction(MessagesController.getInstance(currentAccount), messageObject.getDialogId(), messageObject) || messageObject != null && messageObject.hasRevealedExtendedMedia()
             ) {
                 windowLayoutParams.flags |= WindowManager.LayoutParams.FLAG_SECURE;
                 AndroidUtilities.logFlagSecure();

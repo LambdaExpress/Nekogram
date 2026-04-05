@@ -340,6 +340,7 @@ import com.fylnx.lelegram.BackButtonMenuRecent;
 import com.fylnx.lelegram.LeleConfig;
 import com.fylnx.lelegram.SimpleTextViewSwitcher;
 import com.fylnx.lelegram.helpers.PopupHelper;
+import com.fylnx.lelegram.protection.ContentProtectionHelper;
 import com.fylnx.lelegram.helpers.remote.ConfigHelper;
 import com.fylnx.lelegram.settings.LeleSettingsActivity;
 import com.fylnx.lelegram.translator.Translator;
@@ -2509,7 +2510,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
             flagSecure = null;
         }
         if (layout != null && layout.getParentActivity() != null) {
-            flagSecure = new FlagSecureReason(layout.getParentActivity().getWindow(), () -> currentEncryptedChat != null || isPeerNoForwards());
+            flagSecure = new FlagSecureReason(layout.getParentActivity().getWindow(), () -> currentEncryptedChat != null || ContentProtectionHelper.shouldBlockProtectedAction(isPeerNoForwards(), false));
         }
     }
 
@@ -3121,7 +3122,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                     isPulledDown = true;
                     NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.needCheckSystemBarColors, true);
                     if (otherItem != null) {
-                        if (!isPeerNoForwards()) {
+                        if (!ContentProtectionHelper.shouldBlockProtectedAction(isPeerNoForwards(), false)) {
                             otherItem.showSubItem(gallery_menu_save);
                         } else {
                             otherItem.hideSubItem(gallery_menu_save);
@@ -8441,7 +8442,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                 if (allowPullingDown && (openingAvatar || expandProgress >= 0.33f)) {
                     if (!isPulledDown) {
                         if (otherItem != null) {
-                            if (!isPeerNoForwards()) {
+                            if (!ContentProtectionHelper.shouldBlockProtectedAction(isPeerNoForwards(), false)) {
                                 otherItem.showSubItem(gallery_menu_save);
                             } else {
                                 otherItem.hideSubItem(gallery_menu_save);
@@ -12275,7 +12276,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
         } else {
             otherItem.addSubItem(gallery_menu_save, R.drawable.msg_gallery, LocaleController.getString(R.string.SaveToGallery));
         }
-        if (isPeerNoForwards()) {
+        if (ContentProtectionHelper.shouldBlockProtectedAction(isPeerNoForwards(), false)) {
             otherItem.hideSubItem(gallery_menu_save);
         }
 
@@ -14172,7 +14173,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                     } else {
                         setLoadingSpan(null);
                         String urlFinal = getMessagesController().linkPrefix + "/" + usernameRaw;
-                        if (currentChat == null || !currentChat.noforwards) {
+                        if (currentChat == null || !ContentProtectionHelper.shouldBlockProtectedAction(currentChat.noforwards, false)) {
                             AndroidUtilities.addToClipboard(urlFinal);
                             undoView.showWithAction(0, UndoView.ACTION_USERNAME_COPIED, null);
                         }

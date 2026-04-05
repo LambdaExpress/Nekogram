@@ -40,14 +40,18 @@ import java.util.Date;
 import java.util.Locale;
 
 import com.fylnx.lelegram.helpers.MessageHelper;
+import com.fylnx.lelegram.protection.ContentProtectionHelper;
 import com.fylnx.lelegram.helpers.UserHelper;
 import com.fylnx.lelegram.helpers.WebAppHelper;
 import com.fylnx.lelegram.settings.BaseLeleSettingsActivity;
+import com.fylnx.lelegram.copy.CopyRestrictionsHelper;
 
 public class MessageDetailsActivity extends BaseLeleSettingsActivity implements NotificationCenter.NotificationCenterDelegate {
 
     private final MessageObject messageObject;
     private final boolean noforwards;
+    private final boolean copyRestricted;
+    private final boolean protectionRestricted;
 
     private TLRPC.Chat toChat;
     private TLRPC.User fromUser;
@@ -162,9 +166,13 @@ public class MessageDetailsActivity extends BaseLeleSettingsActivity implements 
             }
         }
 
-        noforwards = isPeerNoForwards() ||
-                messageObject.messageOwner.noforwards ||
+        boolean peerNoForwards = isPeerNoForwards();
+        boolean messageNoForwards = messageObject.messageOwner.noforwards;
+        protectionRestricted = ContentProtectionHelper.shouldBlockProtectedAction(peerNoForwards, messageNoForwards);
+        noforwards = protectionRestricted ||
                 messageObject.type == MessageObject.TYPE_PAID_MEDIA;
+        copyRestricted = messageObject.type == MessageObject.TYPE_PAID_MEDIA ||
+                CopyRestrictionsHelper.shouldBlockCopy(peerNoForwards, messageNoForwards);
     }
 
     @Override
@@ -371,7 +379,7 @@ public class MessageDetailsActivity extends BaseLeleSettingsActivity implements 
                 intent.putExtra(Intent.EXTRA_STREAM, uri);
                 intent.setDataAndType(uri, messageObject.getMimeType());
                 startActivityForResult(Intent.createChooser(intent, LocaleController.getString(R.string.ShareFile)), 500);
-            } else {
+            } else if (protectionRestricted) {
                 showNoForwards();
             }
         } else if (id == channelRow || id == groupRow) {
@@ -485,12 +493,12 @@ public class MessageDetailsActivity extends BaseLeleSettingsActivity implements 
     protected boolean onItemLongClick(UItem item, View view, int position, float x, float y) {
         var id = item.id;
         if (item.viewType != UniversalAdapter.VIEW_TYPE_SHADOW && id != exportRow) {
-            if (!noforwards || !(id == messageRow || id == captionRow || id == filePathRow)) {
+            if (!copyRestricted || !(id == messageRow || id == captionRow || id == filePathRow)) {
                 var text = ((TextDetailSettingsCell) view).getValueTextView().getText();
                 AndroidUtilities.addToClipboard(text);
                 BulletinFactory.of(this).createCopyBulletin(LocaleController.formatString(R.string.TextCopied)).show();
                 return true;
-            } else {
+            } else if (protectionRestricted) {
                 showNoForwards();
                 return true;
             }

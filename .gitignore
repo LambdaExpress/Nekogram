@@ -19,6 +19,8 @@ sentry.properties
 docs/
 java_pid45800.hprof
 AGENTS.md
+openspec/
+.codex/
 *.bat
 .codex-tmp/
 .omc/

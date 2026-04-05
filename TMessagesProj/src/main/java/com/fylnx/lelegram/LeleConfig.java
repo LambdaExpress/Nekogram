@@ -71,6 +71,7 @@ public class LeleConfig {
     public static boolean hideKeyboardOnChatScroll = false;
     public static boolean keepDeletedMessages = true;
     public static boolean forwardDeletedMessages = true;
+    public static boolean allowProtectedContentActions = false;
     public static boolean rearVideoMessages = false;
     public static boolean hideAllTab = false;
     public static boolean confirmAVMessage = false;
@@ -196,6 +197,7 @@ public class LeleConfig {
             hideKeyboardOnChatScroll = preferences.getBoolean("hideKeyboardOnChatScroll", false);
             keepDeletedMessages = preferences.getBoolean("keepDeletedMessages", true);
             forwardDeletedMessages = preferences.getBoolean("forwardDeletedMessages", true);
+            allowProtectedContentActions = preferences.getBoolean("allowProtectedContentActions", false);
             useSystemEmoji = preferences.getBoolean("useSystemEmoji", false);
             rearVideoMessages = preferences.getBoolean("rearVideoMessages", false);
             hideAllTab = preferences.getBoolean("hideAllTab", false);
@@ -600,6 +602,14 @@ public class LeleConfig {
         SharedPreferences preferences = ApplicationLoader.applicationContext.getSharedPreferences("leleconfig", Activity.MODE_PRIVATE);
         SharedPreferences.Editor editor = preferences.edit();
         editor.putBoolean("forwardDeletedMessages", forwardDeletedMessages);
+        editor.apply();
+    }
+
+    public static void toggleAllowProtectedContentActions() {
+        allowProtectedContentActions = !allowProtectedContentActions;
+        SharedPreferences preferences = ApplicationLoader.applicationContext.getSharedPreferences("leleconfig", Activity.MODE_PRIVATE);
+        SharedPreferences.Editor editor = preferences.edit();
+        editor.putBoolean("allowProtectedContentActions", allowProtectedContentActions);
         editor.apply();
     }
 

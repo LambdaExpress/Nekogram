@@ -228,8 +228,10 @@ import org.telegram.ui.Stories.recorder.DominantColors;
 
 import com.fylnx.lelegram.LeleConfig;
 import com.fylnx.lelegram.accessibility.AccConfig;
+import com.fylnx.lelegram.forward.ForwardRestrictionsHelper;
 import com.fylnx.lelegram.helpers.MessageFilterHelper;
 import com.fylnx.lelegram.helpers.MessageHelper;
+import com.fylnx.lelegram.protection.ContentProtectionHelper;
 import com.fylnx.lelegram.helpers.WhisperHelper;
 
 import java.io.File;
@@ -6296,7 +6298,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                 drawSideButton = checkNeedDrawShareButton(messageObject) ? 2 : 0;
             } else if (messageObject.searchType == ChatActivity.SEARCH_MY_MESSAGES) {
                 drawSideButton = 0;
-            } else if (MessagesController.getInstance(currentAccount).isPeerNoForwards(messageObject.getDialogId()) || (messageObject.messageOwner != null && messageObject.messageOwner.noforwards)) {
+            } else if (ForwardRestrictionsHelper.shouldBlockForward(MessagesController.getInstance(currentAccount), messageObject.getDialogId(), messageObject)) {
                 drawSideButton = 0;
             } else {
                 drawSideButton = !isRepliesChat && checkNeedDrawShareButton(messageObject) ? 1 : 0;
@@ -11158,7 +11160,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                 flagSecure = new FlagSecureReason(window, () ->
                     currentMessageObject != null && currentMessageObject.messageOwner != null && (
                         currentMessageObject.type == MessageObject.TYPE_PAID_MEDIA && (groupMedia == null || !groupMedia.hidden) ||
-                        currentMessageObject.messageOwner.noforwards ||
+                        ContentProtectionHelper.shouldBlockProtectedAction(false, currentMessageObject.messageOwner.noforwards) ||
                         currentMessageObject.isVoiceOnce() ||
                         currentMessageObject.hasRevealedExtendedMedia()
                     )

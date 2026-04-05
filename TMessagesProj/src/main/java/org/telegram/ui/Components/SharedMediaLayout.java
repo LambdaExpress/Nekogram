@@ -169,6 +169,7 @@ import com.fylnx.lelegram.LeleConfig;
 import com.fylnx.lelegram.forward.ForwardContext;
 import com.fylnx.lelegram.forward.ForwardDrawable;
 import com.fylnx.lelegram.forward.ForwardItem;
+import com.fylnx.lelegram.forward.ForwardRestrictionsHelper;
 
 @SuppressWarnings("unchecked")
 public class SharedMediaLayout extends FrameLayout implements NotificationCenter.NotificationCenterDelegate, DialogCell.DialogCellDelegate, ForwardContext {
@@ -3743,7 +3744,7 @@ public class SharedMediaLayout extends FrameLayout implements NotificationCenter
         if (forwardItem == null) {
             return;
         }
-        boolean noforwards = profileActivity.getMessagesController().isPeerNoForwards(dialog_id) || hasNoforwardsMessage();
+        boolean noforwards = ForwardRestrictionsHelper.shouldBlockForward(profileActivity.getMessagesController().isPeerNoForwards(dialog_id), hasNoforwardsMessage());
         forwardItem.setAlpha(noforwards ? 0.5f : 1f);
         if (forwardNoQuoteItem != null) forwardNoQuoteItem.setAlpha(noforwards ? 0.5f : 1f);
         if (noforwards && forwardItem.getBackground() != null) {
@@ -5162,29 +5163,27 @@ public class SharedMediaLayout extends FrameLayout implements NotificationCenter
                 cantDeleteMessagesCount = 0;
             }, null, resourcesProvider);
         } else if (id == forward || id == forward_noquote || id == forward_nocaption) {
+            boolean peerNoforwards = false;
             if (userInfo != null) {
-                if (profileActivity.getMessagesController().isUserNoForwards(userInfo)) {
-                    if (fwdRestrictedHint != null) {
-                        fwdRestrictedHint.setText(getString(R.string.ForwardsRestrictedInfoUser));
-                        fwdRestrictedHint.showForView(v, true);
-                    }
-                    return;
-                }
-            }
-            if (info != null) {
+                peerNoforwards = profileActivity.getMessagesController().isUserNoForwards(userInfo);
+            } else if (info != null) {
                 TLRPC.Chat chat = profileActivity.getMessagesController().getChat(info.id);
-                if (profileActivity.getMessagesController().isChatNoForwards(chat)) {
-                    if (fwdRestrictedHint != null) {
-                        fwdRestrictedHint.setText(ChatObject.isChannel(chat) && !chat.megagroup ? getString(R.string.ForwardsRestrictedInfoChannel) :
-                                getString(R.string.ForwardsRestrictedInfoGroup));
-                        fwdRestrictedHint.showForView(v, true);
-                    }
-                    return;
-                }
+                peerNoforwards = profileActivity.getMessagesController().isChatNoForwards(chat);
             }
-            if (hasNoforwardsMessage()) {
+            boolean messageNoforwards = hasNoforwardsMessage();
+            if (ForwardRestrictionsHelper.shouldBlockForward(peerNoforwards, messageNoforwards)) {
                 if (fwdRestrictedHint != null) {
-                    fwdRestrictedHint.setText(getString("ForwardsRestrictedInfoBot", R.string.ForwardsRestrictedInfoBot));
+                    if (peerNoforwards) {
+                        if (userInfo != null) {
+                            fwdRestrictedHint.setText(getString(R.string.ForwardsRestrictedInfoUser));
+                        } else {
+                            TLRPC.Chat chat = profileActivity.getMessagesController().getChat(info.id);
+                            fwdRestrictedHint.setText(ChatObject.isChannel(chat) && !chat.megagroup ? getString(R.string.ForwardsRestrictedInfoChannel) :
+                                    getString(R.string.ForwardsRestrictedInfoGroup));
+                        }
+                    } else {
+                        fwdRestrictedHint.setText(getString("ForwardsRestrictedInfoBot", R.string.ForwardsRestrictedInfoBot));
+                    }
                     fwdRestrictedHint.showForView(v, true);
                 }
                 return;

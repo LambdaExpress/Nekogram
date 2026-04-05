@@ -18,6 +18,9 @@
     <string name="KeepDeletedMessagesDesc">Preserve recalled messages locally and mark them as deleted in the time area.</string>
     <string name="ForwardDeletedMessages">Forward deleted messages</string>
     <string name="ForwardDeletedMessagesDesc">When forwarding locally preserved deleted messages, send a copied message instead of using server-side forward.</string>
+    <string name="AllowProtectedContentActions">Allow protected content actions</string>
+    <string name="AllowProtectedContentActionsDesc">When a chat or message protects content, still allow local forwarding, copying, saving, sharing, and screenshot-related actions. Other blockers such as paid media, TTL media, and unsupported actions still apply.</string>
+    <string name="DeletedFilter">Deleted</string>
     <string name="DeletedMark">Deleted</string>
     <string name="SourceMessageDeleted">Source message was deleted</string>
     <string name="NameOrder">Name order</string>

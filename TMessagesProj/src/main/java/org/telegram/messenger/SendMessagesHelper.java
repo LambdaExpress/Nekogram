@@ -107,6 +107,7 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
 import com.fylnx.lelegram.LeleConfig;
+import com.fylnx.lelegram.forward.ForwardRestrictionsHelper;
 
 public class SendMessagesHelper extends BaseController implements NotificationCenter.NotificationCenterDelegate {
 
@@ -1436,6 +1437,11 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
         object.messageOwner.media = object.previousMedia;
         object.messageOwner.message = object.previousMessage;
         object.messageOwner.entities = object.previousMessageEntities;
+        ArrayList<TLRPC.MessageEditHistoryEntry> previousEditHistory = MessageCustomParamsHelper.copyEditHistory(object.previousEditHistory);
+        if (previousEditHistory == null) {
+            previousEditHistory = MessageCustomParamsHelper.copyEditHistoryWithoutLastEntry(object.messageOwner.editHistory);
+        }
+        object.messageOwner.editHistory = previousEditHistory;
         object.messageOwner.attachPath = object.previousAttachPath;
         object.messageOwner.send_state = MessageObject.MESSAGE_SEND_STATE_SENT;
 
@@ -1448,6 +1454,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
         object.previousMedia = null;
         object.previousMessage = null;
         object.previousMessageEntities = null;
+        object.previousEditHistory = null;
         object.previousAttachPath = null;
         object.videoEditedInfo = null;
         object.type = -1;
@@ -1699,6 +1706,13 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
         return messageObject != null && (messageObject.deleted || messageObject.messageOwner != null && messageObject.messageOwner.deleted);
     }
 
+    private boolean shouldSendCopiedForwardMessage(MessageObject messageObject) {
+        return messageObject != null && (
+                LeleConfig.forwardDeletedMessages && isLocallyDeletedMessage(messageObject)
+                        || ForwardRestrictionsHelper.shouldUseCopiedForward(messageObject)
+        );
+    }
+
     private void applyCopiedForwardParams(SendMessageParams params, MessageObject messageObject, long payStars, long monoForumPeerId, MessageSuggestionParams suggestionParams) {
         params.payStars = payStars;
         params.monoForumPeer = monoForumPeerId;
@@ -1749,24 +1763,9 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
             if (media instanceof TLRPC.TL_messageMediaWebPage) {
                 webPage = media.webpage;
             }
-            ArrayList<TLRPC.MessageEntity> entities;
-            if (messageObject.messageOwner.entities != null && !messageObject.messageOwner.entities.isEmpty()) {
-                entities = new ArrayList<>();
-                for (int a = 0; a < messageObject.messageOwner.entities.size(); a++) {
-                    TLRPC.MessageEntity entity = messageObject.messageOwner.entities.get(a);
-                    if (entity instanceof TLRPC.TL_messageEntityBold ||
-                            entity instanceof TLRPC.TL_messageEntityItalic ||
-                            entity instanceof TLRPC.TL_messageEntityPre ||
-                            entity instanceof TLRPC.TL_messageEntityCode ||
-                            entity instanceof TLRPC.TL_messageEntityTextUrl ||
-                            entity instanceof TLRPC.TL_messageEntitySpoiler ||
-                            entity instanceof TLRPC.TL_messageEntityCustomEmoji) {
-                        entities.add(entity);
-                    }
-                }
-            } else {
-                entities = null;
-            }
+            ArrayList<TLRPC.MessageEntity> entities = messageObject.messageOwner.entities != null && !messageObject.messageOwner.entities.isEmpty()
+                    ? new ArrayList<>(messageObject.messageOwner.entities)
+                    : null;
             sendParams = SendMessagesHelper.SendMessageParams.of(messageObject.messageOwner.message, did, replyToMsg, replyTarget, webPage, true, entities, null, null, notify, scheduleDate, scheduleRepeatPeriod, null, false);
         }
 
@@ -2061,16 +2060,14 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                 canSendMusic = ChatObject.canSendMusic(chat);
             }
 
-            boolean hasLocalDeletedMessages = false;
-            if (LeleConfig.forwardDeletedMessages) {
-                for (int a = 0; a < messages.size(); a++) {
-                    if (isLocallyDeletedMessage(messages.get(a))) {
-                        hasLocalDeletedMessages = true;
-                        break;
-                    }
+            boolean hasCopiedForwardMessages = false;
+            for (int a = 0; a < messages.size(); a++) {
+                if (shouldSendCopiedForwardMessage(messages.get(a))) {
+                    hasCopiedForwardMessages = true;
+                    break;
                 }
             }
-            if (hasLocalDeletedMessages) {
+            if (hasCopiedForwardMessages) {
                 ArrayList<MessageObject> forwardBatch = new ArrayList<>();
                 for (int a = 0; a < messages.size(); a++) {
                     MessageObject msgObj = messages.get(a);
@@ -2130,7 +2127,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                         continue;
                     }
 
-                    if (isLocallyDeletedMessage(msgObj)) {
+                    if (shouldSendCopiedForwardMessage(msgObj)) {
                         if (!forwardBatch.isEmpty()) {
                             int batchResult = sendMessage(forwardBatch, peer, forwardFromMyName, hideCaption, notify, scheduleDate, scheduleRepeatPeriod, replyToTopMsg, video_timestamp, payStars, monoForumPeerId, suggestionParams);
                             if (sendResult == 0) {
@@ -2842,6 +2839,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
             int type = -1;
             DelayedMessage delayedMessage = null;
             long peer = messageObject.getDialogId();
+            String previousMessageText = null;
             boolean supportsSendingNewEntities = true;
             if (DialogObject.isEncryptedDialog(peer)) {
                 int encryptedId = DialogObject.getEncryptedChatId(peer);
@@ -2879,7 +2877,9 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                 messageObject.previousMedia = newMsg.media;
                 messageObject.previousMessage = newMsg.message;
                 messageObject.previousMessageEntities = newMsg.entities;
+                messageObject.previousEditHistory = MessageCustomParamsHelper.copyEditHistory(newMsg.editHistory);
                 messageObject.previousAttachPath = newMsg.attachPath;
+                previousMessageText = newMsg.message;
 
                 TLRPC.MessageMedia media = newMsg.media;
                 if (media == null) {
@@ -2892,7 +2892,13 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                 if (params == null) {
                     params = new HashMap<>();
                 }
-                params.put("prevMedia", Base64.encodeToString(prevMessageData.toByteArray(), Base64.DEFAULT));
+                params.put(MessageCustomParamsHelper.PREVIOUS_MEDIA_PARAM, Base64.encodeToString(prevMessageData.toByteArray(), Base64.DEFAULT));
+                String previousEditHistory = MessageCustomParamsHelper.encodeEditHistory(messageObject.previousEditHistory);
+                if (TextUtils.isEmpty(previousEditHistory)) {
+                    params.remove(MessageCustomParamsHelper.PREVIOUS_EDIT_HISTORY_PARAM);
+                } else {
+                    params.put(MessageCustomParamsHelper.PREVIOUS_EDIT_HISTORY_PARAM, previousEditHistory);
+                }
                 prevMessageData.cleanup();
 
                 if (photo != null) {
@@ -2987,6 +2993,9 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                         }
                         messageObject.generateCaption();
                     }
+                }
+                if (!TextUtils.equals(previousMessageText, newMsg.message)) {
+                    MessageCustomParamsHelper.addCurrentVersionToLocalEditHistory(newMsg, previousMessageText);
                 }
 
                 ArrayList<TLRPC.Message> arr = new ArrayList<>();
