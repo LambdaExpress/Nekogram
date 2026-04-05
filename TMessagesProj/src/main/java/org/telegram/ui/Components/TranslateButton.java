@@ -60,7 +60,7 @@ import com.fylnx.lelegram.LeleConfig;
 import com.fylnx.lelegram.settings.LeleLanguagesSelectActivity;
 import com.fylnx.lelegram.translator.Translator;
 
-public class TranslateButton extends FrameLayout {
+public class TranslateButton extends FrameLayout implements Theme.Colorable {
 
     private final int currentAccount;
     private final long dialogId;
@@ -129,6 +129,7 @@ public class TranslateButton extends FrameLayout {
         updateColors();
     }
 
+    @Override
     public void updateColors() {
         textView.setTextColor(Theme.getColor(Theme.key_chat_addContact, resourcesProvider));
         textView.setBackground(Theme.createInsetRoundRectDrawable(Theme.getColor(Theme.key_chat_addContact, resourcesProvider) & 0x19ffffff, dp(15), dp(3)));

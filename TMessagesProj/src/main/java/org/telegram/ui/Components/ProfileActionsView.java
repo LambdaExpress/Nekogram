@@ -30,7 +30,6 @@ import android.view.HapticFeedbackConstants;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.accessibility.AccessibilityEvent;
-
 import androidx.annotation.DrawableRes;
 import androidx.annotation.NonNull;
 import androidx.core.view.ViewCompat;
@@ -47,6 +46,7 @@ import org.telegram.messenger.R;
 import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.Utilities;
 import org.telegram.ui.ActionBar.Theme;
+import org.telegram.ui.Cells.ChatMessageCell;
 import org.telegram.ui.ProfileActivity;
 
 import java.util.ArrayList;
